@@ -1,29 +1,5 @@
 #include <stdio.h>
 #include <stdlib.h>
-//#include <unistd.h>
-
-//#include <pthread.h>
-
-
-/*
-struct InstructionTextStruct {
-	int length;
-	char *start_char;
-};
-
-
-void *parseInstruction(void *args) {
-	struct InstructionTextStruct *inst_text = (struct InstructionTextStruct *)args;
-	for (int i = 0; i < inst_text->length; i++) {
-		printf("%c\n", inst_text->start_char[i]);
-		fflush(stdout);
-		usleep(50000);
-	}
-
-	return NULL;
-}
-
-*/
 
 
 enum LineType {
@@ -69,7 +45,7 @@ int main(int argc, char **argv) {
 	fclose(asm_file);
 
 	unsigned long lines_arr_size = 256;
-	struct Line *lines = malloc(lines_arr_size);
+	struct Line *lines = malloc(lines_arr_size * sizeof(*lines));
 
 	unsigned long line_num = 0;
 	lines[0] = (struct Line){CODE, asm_buffer};
@@ -80,9 +56,9 @@ int main(int argc, char **argv) {
 			comment = 0;
 
 			if (!(c != asm_buffer_end && (*(c + 1) == '\n' || *(c + 1) == ';'))) {
-				if (line_num++ == lines_arr_size) {
+				if ((line_num++) + 1 == lines_arr_size) {
 					lines_arr_size *= 2;
-					lines = realloc(lines, lines_arr_size);
+					lines = realloc(lines, lines_arr_size * sizeof(*lines));
 				}
 
 				if (c != asm_buffer_end) {
@@ -141,40 +117,8 @@ int main(int argc, char **argv) {
 
 	fclose(gba_file);
 
-
 	free(lines);
 	free(asm_buffer);
-
-	/*
-	rewind(asm_file);
-
-	while ((c = fgetc(asm_file)) != EOF) {
-		if (c != '\n') {
-			printf("%c", c);
-		} else {
-			printf("\nnewline\n");
-		}
-	}
-	*/
-
-	/*
-	struct InstructionTextStruct inst_text1 = {5, "Hello"};
-	struct InstructionTextStruct inst_text2 = {6, "World!"};
-
-	printf("Single-thread:\n");
-	parseInstruction(&inst_text1);
-	parseInstruction(&inst_text2);
-
-	printf("\nMulti-thread:\n");
-	// note that for the actual instruction implementation, it might be nice for us to just stick all the threads into an array so we can iterate through easily
-	pthread_t t1;
-	pthread_t t2;
-	int t1_ret = pthread_create(&t1, NULL, parseInstruction, &inst_text1);
-	int t2_ret = pthread_create(&t2, NULL, parseInstruction, &inst_text2);
-
-	pthread_join(t1, NULL);
-	pthread_join(t2, NULL);
-	*/
 
 	return 0;
 }
