@@ -11,3 +11,10 @@ Requires pthread.
 ```sh
 gcc main.c -pthread -o gbaaa
 ```
+
+---
+
+## Supported Instructions
+
+Mnemonic | Operands
+-------- | --------
