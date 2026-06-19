@@ -1,12 +1,14 @@
 #include <stdio.h>
-#include <unistd.h>
+#include <stdlib.h>
+//#include <unistd.h>
 
-#include <pthread.h>
+//#include <pthread.h>
 
 
+/*
 struct InstructionTextStruct {
 	int length;
-	char* start_char;
+	char *start_char;
 };
 
 
@@ -21,14 +23,25 @@ void *parseInstruction(void *args) {
 	return NULL;
 }
 
+*/
+
+
+enum LineType {
+	CODE,
+	LABEL,
+	DIRECTIVE,
+	END
+};
+
+struct Line {
+	enum LineType type;
+	char *start;
+};
+
 
 int main(int argc, char **argv) {
 	FILE *asm_file; // maybe for when we implement including other asm files in a file we should have an array of those files.
 	FILE *gba_file;
-
-	char c;
-
-	int line_count = 0;
 
 	if (argc < 2) {
 		printf("Please specify input file.\nUsage: %s <input asm file> [output gba file]\n", argv[0]);
@@ -43,6 +56,66 @@ int main(int argc, char **argv) {
 
 		return -101;
 	}
+
+
+	fseek(asm_file, 0, SEEK_END);
+	long asm_size = ftell(asm_file);
+	rewind(asm_file);
+
+	char *asm_buffer = malloc(asm_size + 1);
+	fread(asm_buffer, 1, asm_size, asm_file);
+	asm_buffer[asm_size] = '\n';
+
+	fclose(asm_file);
+
+	unsigned long lines_arr_size = 256;
+	struct Line *lines = malloc(lines_arr_size);
+
+	unsigned long line_num = 0;
+	lines[0] = (struct Line){CODE, asm_buffer};
+	int comment = 0;
+	char *asm_buffer_end = asm_buffer + asm_size;
+	for (char *c = asm_buffer; c <= asm_buffer_end; c++) {
+		if (*c == '\n') {
+			comment = 0;
+
+			if (!(c != asm_buffer_end && (*(c + 1) == '\n' || *(c + 1) == ';'))) {
+				if (line_num++ == lines_arr_size) {
+					lines_arr_size *= 2;
+					lines = realloc(lines, lines_arr_size);
+				}
+
+				if (c != asm_buffer_end) {
+					lines[line_num] = (struct Line){CODE, c + 1};
+					if (*(c + 1) == '@') {
+						lines[line_num].type = DIRECTIVE;
+					}
+				}
+			}
+		}
+
+		if (!comment) {
+			if (*c == ':') {
+				lines[line_num].type = LABEL;
+			} else if (*c == ';') {
+				comment = 1;
+			}
+		}
+	}
+	lines[line_num] = (struct Line){END, NULL};
+
+
+	printf("CODE: %d, LABEL: %d, DIRECTIVE: %d, END: %d\n---\n\n", CODE, LABEL, DIRECTIVE, END);
+	for (int i = 0; i < line_num; i++) {
+		printf("%d:\t", lines[i].type);
+
+		for (char *c = lines[i].start; *c != '\n' && *c != ';'; c++) {
+			printf("%c", *c);
+		}
+
+		printf("\n");
+	}
+
 
 	if (argc > 2) {
 		gba_file = fopen(argv[2], "w");
@@ -66,12 +139,13 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	while ((c = fgetc(asm_file)) != EOF)
-		if (c == '\n')
-			line_count++;
+	fclose(gba_file);
 
-	printf("Line Count: %d\n\n", line_count);
 
+	free(lines);
+	free(asm_buffer);
+
+	/*
 	rewind(asm_file);
 
 	while ((c = fgetc(asm_file)) != EOF) {
@@ -81,6 +155,7 @@ int main(int argc, char **argv) {
 			printf("\nnewline\n");
 		}
 	}
+	*/
 
 	/*
 	struct InstructionTextStruct inst_text1 = {5, "Hello"};
@@ -99,10 +174,6 @@ int main(int argc, char **argv) {
 
 	pthread_join(t1, NULL);
 	pthread_join(t2, NULL);
-
-
-	fclose(asm_file);
-	fclose(gba_file);
 	*/
 
 	return 0;
