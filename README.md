@@ -9,12 +9,14 @@ I don't know what I'm doing so I'm learning.
 Requires pthread.
 
 ```sh
-gcc main.c -pthread -o gbaaa
+gcc -fshort-enums main.c -pthread -o gbaaa
 ```
 
 ---
 
 ## Supported Instructions
 
-Mnemonic | Operands
--------- | --------
+- `mov{cond}{s} Rd, <Oprnd2>`
+
+### Pseudo-Instructions
+
