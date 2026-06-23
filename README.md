@@ -16,7 +16,5 @@ gcc -fshort-enums main.c -pthread -o gbaaa
 
 ## Supported Instructions
 
-- `mov{cond}{s} Rd, <Oprnd2>`
-
 ### Pseudo-Instructions
 
