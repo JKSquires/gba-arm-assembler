@@ -11,10 +11,14 @@ typedef struct Instruction Inst;
 typedef struct InstructionEncoding InstEncoding;
 
 enum LineType {
+	DIR_B = 1,
+	DIR_H = 2,
+	DIR_W = 4,
 	CODE,
 	LABEL,
-	DIRECTIVE,
-	END
+	END,
+	DIR_UNK,
+	DIR_INC
 };
 
 enum InstructionCondition {
@@ -35,32 +39,37 @@ enum InstructionCondition {
 	AL = 14
 };
 
-
+// maybe for operands, we can create a struct that stores type (register, immediate, label reference, memory operand, bit-shift, etc.) and data (union the different ones?)
 enum Oprnd2Type {
 	REG = 0,
 	IMM = 1
 };
 
 struct Line {
-	enum LineType type;
-	unsigned long line_num;
 	char *start;
+	unsigned long line_num;
+	enum LineType type;
+};
+
+struct Label {
+	char *start;
+	uint32_t offset;
 };
 
 struct InstructionEncoding {
-	char *mnemonic;
 	uint32_t (*encode)(Inst *instruction);
+	char *mnemonic;
 };
 
 struct Instruction {
-	bool s;
-	uint8_t operands_length;
-	enum Oprnd2Type oprnd2_type;
-	enum InstructionCondition cond;
-	char **operands;
-	InstEncoding *encoding;
-	char *suffix;
 	struct Line *line;
+	char *suffix;
+	InstEncoding *encoding;
+	char **operands;
+	enum InstructionCondition cond;
+	enum Oprnd2Type oprnd2_type;
+	uint8_t operands_length;
+	bool s;
 };
 
 
@@ -139,56 +148,58 @@ uint32_t unsupportedInstruction(Inst *i) {
 InstEncoding *createEncodings() {
 	InstEncoding *encodings = malloc(ENCODINGS_COUNT * sizeof(*encodings));
 
-	encodings[0] = (InstEncoding){"adc", unsupportedInstruction};
-	encodings[1] = (InstEncoding){"add", unsupportedInstruction};
-	encodings[2] = (InstEncoding){"adr", unsupportedInstruction};
-	encodings[3] = (InstEncoding){"addr", unsupportedInstruction};
-	encodings[4] = (InstEncoding){"adrl", unsupportedInstruction};
-	encodings[5] = (InstEncoding){"and", unsupportedInstruction};
-	encodings[6] = (InstEncoding){"asr", unsupportedInstruction};
-	encodings[7] = (InstEncoding){"b", unsupportedInstruction};
-	encodings[8] = (InstEncoding){"bic", unsupportedInstruction};
-	encodings[9] = (InstEncoding){"bl", unsupportedInstruction};
-	encodings[10] = (InstEncoding){"bx", unsupportedInstruction};
-	encodings[11] = (InstEncoding){"cmn", unsupportedInstruction};
-	encodings[12] = (InstEncoding){"cmp", unsupportedInstruction};
-	encodings[13] = (InstEncoding){"eor", unsupportedInstruction};
-	encodings[14] = (InstEncoding){"ldm", unsupportedInstruction};
-	encodings[15] = (InstEncoding){"ldr", unsupportedInstruction};
-	encodings[16] = (InstEncoding){"lsl", unsupportedInstruction};
-	encodings[17] = (InstEncoding){"mla", unsupportedInstruction};
-	encodings[18] = (InstEncoding){"mov", mov};
-	encodings[19] = (InstEncoding){"mrs", unsupportedInstruction};
-	encodings[20] = (InstEncoding){"msr", unsupportedInstruction};
-	encodings[21] = (InstEncoding){"mul", unsupportedInstruction};
-	encodings[22] = (InstEncoding){"mvn", unsupportedInstruction};
-	encodings[23] = (InstEncoding){"neg", unsupportedInstruction};
-	encodings[24] = (InstEncoding){"nop", unsupportedInstruction};
-	encodings[25] = (InstEncoding){"orr", unsupportedInstruction};
-	encodings[26] = (InstEncoding){"pop", unsupportedInstruction};
-	encodings[27] = (InstEncoding){"push", unsupportedInstruction};
-	encodings[28] = (InstEncoding){"ror", unsupportedInstruction};
-	encodings[29] = (InstEncoding){"rrx", unsupportedInstruction};
-	encodings[30] = (InstEncoding){"rsb", unsupportedInstruction};
-	encodings[31] = (InstEncoding){"rsc", unsupportedInstruction};
-	encodings[32] = (InstEncoding){"sbc", unsupportedInstruction};
-	encodings[33] = (InstEncoding){"smlal", unsupportedInstruction};
-	encodings[34] = (InstEncoding){"smull", unsupportedInstruction};
-	encodings[35] = (InstEncoding){"stm", unsupportedInstruction};
-	encodings[36] = (InstEncoding){"str", unsupportedInstruction};
-	encodings[37] = (InstEncoding){"sub", unsupportedInstruction};
-	encodings[38] = (InstEncoding){"swi", unsupportedInstruction};
-	encodings[39] = (InstEncoding){"swp", unsupportedInstruction};
-	encodings[40] = (InstEncoding){"teq", unsupportedInstruction};
-	encodings[41] = (InstEncoding){"tst", unsupportedInstruction};
-	encodings[42] = (InstEncoding){"und", unsupportedInstruction};
-	encodings[43] = (InstEncoding){"umlal", unsupportedInstruction};
-	encodings[44] = (InstEncoding){"umull", unsupportedInstruction};
+	// maybe instead of one function for each, find patterns like (Rd, Rn, <Oprnd2>), (imm24), (Rt, [Rn, +/- Rm{, <shift>}]{!}), etc. and make functions for those?
+	encodings[0] = (InstEncoding){unsupportedInstruction, "adc"};
+	encodings[1] = (InstEncoding){unsupportedInstruction, "add"};
+	encodings[2] = (InstEncoding){unsupportedInstruction, "adr"};
+	encodings[3] = (InstEncoding){unsupportedInstruction, "addr"};
+	encodings[4] = (InstEncoding){unsupportedInstruction, "adrl"};
+	encodings[5] = (InstEncoding){unsupportedInstruction, "and"};
+	encodings[6] = (InstEncoding){unsupportedInstruction, "asr"};
+	encodings[7] = (InstEncoding){unsupportedInstruction, "b"};
+	encodings[8] = (InstEncoding){unsupportedInstruction, "bic"};
+	encodings[9] = (InstEncoding){unsupportedInstruction, "bl"};
+	encodings[10] = (InstEncoding){unsupportedInstruction, "bx"};
+	encodings[11] = (InstEncoding){unsupportedInstruction, "cmn"};
+	encodings[12] = (InstEncoding){unsupportedInstruction, "cmp"};
+	encodings[13] = (InstEncoding){unsupportedInstruction, "eor"};
+	encodings[14] = (InstEncoding){unsupportedInstruction, "ldm"};
+	encodings[15] = (InstEncoding){unsupportedInstruction, "ldr"};
+	encodings[16] = (InstEncoding){unsupportedInstruction, "lsl"};
+	encodings[17] = (InstEncoding){unsupportedInstruction, "mla"};
+	encodings[18] = (InstEncoding){mov, "mov"};
+	encodings[19] = (InstEncoding){unsupportedInstruction, "mrs"};
+	encodings[20] = (InstEncoding){unsupportedInstruction, "msr"};
+	encodings[21] = (InstEncoding){unsupportedInstruction, "mul"};
+	encodings[22] = (InstEncoding){unsupportedInstruction, "mvn"};
+	encodings[23] = (InstEncoding){unsupportedInstruction, "neg"};
+	encodings[24] = (InstEncoding){unsupportedInstruction, "nop"};
+	encodings[25] = (InstEncoding){unsupportedInstruction, "orr"};
+	encodings[26] = (InstEncoding){unsupportedInstruction, "pop"};
+	encodings[27] = (InstEncoding){unsupportedInstruction, "push"};
+	encodings[28] = (InstEncoding){unsupportedInstruction, "ror"};
+	encodings[29] = (InstEncoding){unsupportedInstruction, "rrx"};
+	encodings[30] = (InstEncoding){unsupportedInstruction, "rsb"};
+	encodings[31] = (InstEncoding){unsupportedInstruction, "rsc"};
+	encodings[32] = (InstEncoding){unsupportedInstruction, "sbc"};
+	encodings[33] = (InstEncoding){unsupportedInstruction, "smlal"};
+	encodings[34] = (InstEncoding){unsupportedInstruction, "smull"};
+	encodings[35] = (InstEncoding){unsupportedInstruction, "stm"};
+	encodings[36] = (InstEncoding){unsupportedInstruction, "str"};
+	encodings[37] = (InstEncoding){unsupportedInstruction, "sub"};
+	encodings[38] = (InstEncoding){unsupportedInstruction, "swi"};
+	encodings[39] = (InstEncoding){unsupportedInstruction, "swp"};
+	encodings[40] = (InstEncoding){unsupportedInstruction, "teq"};
+	encodings[41] = (InstEncoding){unsupportedInstruction, "tst"};
+	encodings[42] = (InstEncoding){unsupportedInstruction, "und"};
+	encodings[43] = (InstEncoding){unsupportedInstruction, "umlal"};
+	encodings[44] = (InstEncoding){unsupportedInstruction, "umull"};
 
 	return encodings;
 }
 
 
+// FIXME: should probably not store so much on the stack...
 int main(int argc, char **argv) {
 	FILE *asm_file; // maybe for when we implement including other asm files in a file we should have an array of those files.
 	FILE *gba_file;
@@ -223,8 +234,15 @@ int main(int argc, char **argv) {
 
 	unsigned long line_num = 0;
 	unsigned long file_line_num = 1;
-	lines[line_num] = (struct Line){CODE, file_line_num, asm_buffer};
+	lines[line_num] = (struct Line){asm_buffer, file_line_num, CODE};
+
+	uint32_t track_rom_size = 0;
+	unsigned long labels_arr_size = 64;
+	struct Label *labels = malloc(labels_arr_size * sizeof(*labels)); // FIXME: should absolutely use a hash table at some point instead
+	unsigned long label_tot = 0;
+
 	bool comment = false;
+
 	char *asm_buffer_end = asm_buffer + asm_size;
 	for (char *c = asm_buffer; c <= asm_buffer_end; c++) {
 		if (*c == '\n') {
@@ -232,27 +250,92 @@ int main(int argc, char **argv) {
 			file_line_num++;
 
 			if (!(c != asm_buffer_end && (*(c + 1) == '\n' || *(c + 1) == ';'))) {
-				if ((line_num++) + 1 == lines_arr_size) {
+				if (lines[line_num].type == CODE) {
+					track_rom_size += 4;
+				}
+
+				if (++line_num + 1 == lines_arr_size) {
 					lines_arr_size *= 2;
 					lines = realloc(lines, lines_arr_size * sizeof(*lines));
 				}
 
 				if (c != asm_buffer_end) {
-					lines[line_num] = (struct Line){CODE, file_line_num, c + 1};
+					lines[line_num] = (struct Line){c + 1, file_line_num, CODE};
 					if (*(c + 1) == '@') {
-						lines[line_num].type = DIRECTIVE;
+						switch (getLowerChar(*(c + 2))) {
+							case 'i':
+								if (getLowerChar(*(c + 3)) == 'n'
+									&& getLowerChar(*(c + 4)) == 'c'
+									&& getLowerChar(*(c + 5)) == ' ') {
+									printf("\nInclude directive is unsupported right now\n");
+									lines[line_num].type = DIR_INC;
+
+									c += 5;
+								}
+							case 'b': // fall through
+							case 'h': // fall through
+							case 'w':
+								if (*(c + 3) == ' ') {
+									char k = getLowerChar(*(c + 2));
+									lines[line_num].type = k == 'b' ? DIR_B :
+															k == 'h' ? DIR_H :
+																		DIR_W;
+
+									 for (c += 3; *c != '\n'; c++) {
+										if (*c == '$' || *c == '%') {
+											track_rom_size += lines[line_num].type;
+										}
+									}
+									c--;
+								}
+								break;
+							default:
+								lines[line_num].type = DIR_UNK;
+								break;
+						}
 					}
+					// maybe start processing instructions here and then encode in the second pass later
 				}
 			}
 		}
 
 		if (!comment) {
 			switch (*c) {
-				case ':':
-					lines[line_num].type = LABEL;
-					break;
 				case ';':
 					comment = true;
+					break;
+				case ':':
+					lines[line_num].type = LABEL;
+
+					unsigned int label_length = c - lines[line_num].start;
+
+					bool is_dup = false;
+					for (unsigned long i = 0; i < label_tot; i++) {
+						unsigned int dup_char = 0;
+						for (unsigned long si = 0; si < label_length; si++) {
+							if (lines[line_num].start[si] == labels[i].start[si]) {
+								dup_char++;
+							}
+						}
+
+						if (dup_char == label_length) {
+							is_dup = true;
+							printf("Duplicate label on line %lu\n", file_line_num);
+
+							break;
+						}
+					}
+
+					if (!is_dup) {
+						if (label_tot == labels_arr_size) {
+							labels_arr_size *= 2;
+							labels = realloc(labels, labels_arr_size * sizeof(*labels));
+						}
+
+						labels[label_tot] = (struct Label){lines[line_num].start, track_rom_size};
+						label_tot++;
+					}
+
 					break;
 				default:
 					*c = getLowerChar(*c);
@@ -260,22 +343,24 @@ int main(int argc, char **argv) {
 			}
 		}
 	}
-	lines[line_num] = (struct Line){END, file_line_num, NULL};
+	lines[line_num] = (struct Line){NULL, file_line_num, END};
 
 
 	InstEncoding *encodings = createEncodings();
 
-	printf("CODE: %d, LABEL: %d, DIRECTIVE: %d, END: %d\n---\nLine:\tType:\n", CODE, LABEL, DIRECTIVE, END);
+	printf("DIR_B = %d, DIR_H = %d, DIR_W = %d, CODE = %d, LABEL = %d, END = %d, DIR_UNK = %d, DIR_INC = %d\n---\nLine:\tType:\n", DIR_B, DIR_H, DIR_W, CODE, LABEL, END, DIR_UNK, DIR_INC);
 	for (int i = 0; i < line_num; i++) {
 		printf("%lu:\t%d:\t", lines[i].line_num, lines[i].type);
 
 		for (char *c = lines[i].start; *c != '\n' && *c != ';'; c++) {
-			// TODO: start processing lines: need to process directives, calculate label offsets, create instruction encodings for each instruction line, ... more most certainly
+			// TODO: start processing lines: need to process byte define directives, and create instruction encodings for each instruction line, ... more most certainly
 			printf("%c", *c);
 		}
 
 		printf("\n");
 	}
+
+	printf("Rom size: %lu bytes\n", (unsigned long)track_rom_size);
 
 
 	if (argc > 2) {
@@ -303,6 +388,7 @@ int main(int argc, char **argv) {
 	fclose(gba_file);
 
 	free(encodings);
+	free(labels);
 	free(lines);
 	free(asm_buffer);
 
