@@ -275,7 +275,7 @@ int main(int argc, char **argv) {
 	int count_blocks = 1;
 	struct InstructionBlock blocks[MAX_INSTRUCTION_BLOCKS];
 
-	lines[0] = (struct Line){asm_buffer, NULL, 0, CODE}; // FIXME: consider the case where line 0 is not code but like a comment or something; verify this would still work
+	lines[0] = (struct Line){asm_buffer, NULL, 0, CODE}; // TODO: consider the case where line 0 is not code but like a comment or something; verify this would still work
 	blocks[0] = (struct InstructionBlock){asm_buffer, FIRST};
 
 	char *asm_buffer_end = asm_buffer + asm_size;
@@ -390,7 +390,7 @@ int main(int argc, char **argv) {
 					break;
 				case ',':
 					count_blocks++;
-					// store oprnd *start but first make sure the number of operands are not too large (if too large, there must be a problem)
+
 					if (count_blocks <= MAX_INSTRUCTION_BLOCKS) {
 						blocks[count_blocks - 1] = (struct InstructionBlock){c + 1, inside_mem_oprnd ? MEM_REG : REG};
 					} else {
@@ -398,6 +398,7 @@ int main(int argc, char **argv) {
 					}
 
 					break;
+				// TODO: need to get cases and determine block types (and track inside_mem_oprnd)
 				default:
 					*c = getLowerChar(*c);
 					break;
