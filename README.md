@@ -2,6 +2,8 @@
 
 I don't know what I'm doing so I'm learning.
 
+I just know that I'm going to look back at this code in the future and think, "wow was I bad at programming," and that's a good thing.
+
 ---
 
 ## Build Instructions

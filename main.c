@@ -5,6 +5,7 @@
 
 
 #define ENCODINGS_COUNT 45
+#define MAX_INSTRUCTION_BLOCKS 4 // TODO: check that 4 is the max number of blocks a valid instruction can have
 
 
 typedef struct Instruction Inst;
@@ -40,13 +41,28 @@ enum InstructionCondition {
 };
 
 // maybe for operands, we can create a struct that stores type (register, immediate, label reference, memory operand, bit-shift, etc.) and data (union the different ones?)
-enum Oprnd2Type {
-	REG = 0,
-	IMM = 1
+//enum Oprnd2Type {
+//	REG = 0,
+//	IMM = 1
+//};
+
+enum BlockType {
+	FIRST,
+	REG,
+	IMM,
+	LBL,
+	SHIFT_REG,
+	SHIFT_IMM,
+	MEM_REG,
+	MEM_IMM,
+	MEM_LBL,
+	MEM_SHIFT_REG,
+	MEM_SHIFT_IMM
 };
 
 struct Line {
-	char *start;
+	char *start; // TODO: might be nice to get rid of this
+	void *data;
 	unsigned long line_num;
 	enum LineType type;
 };
@@ -56,11 +72,17 @@ struct Label {
 	uint32_t offset;
 };
 
+struct InstructionBlock {
+	char *start;
+	enum BlockType type;
+};
+
 struct InstructionEncoding {
 	uint32_t (*encode)(Inst *instruction);
 	char *mnemonic;
 };
 
+/*
 struct Instruction {
 	struct Line *line;
 	char *suffix;
@@ -70,6 +92,12 @@ struct Instruction {
 	enum Oprnd2Type oprnd2_type;
 	uint8_t operands_length;
 	bool s;
+};
+*/
+struct Instruction {
+	struct Line *line; // TODO: refactor to better whay than a loop like this where lines have instructions which store the line etc...
+	struct InstructionBlock *blocks;
+	uint8_t block_count;
 };
 
 
@@ -119,6 +147,7 @@ uint16_t imm12(uint32_t val, Inst *i) {
 	return (r << 8) | imm8;
 }
 
+/*
 uint32_t mov(Inst *i) {
 	uint32_t encoding = 0;
 
@@ -137,6 +166,7 @@ uint32_t mov(Inst *i) {
 
 	return encoding;
 }
+*/
 
 uint32_t unsupportedInstruction(Inst *i) {
 	printf("Unsupported instruction: ");
@@ -167,7 +197,7 @@ InstEncoding *createEncodings() {
 	encodings[15] = (InstEncoding){unsupportedInstruction, "ldr"};
 	encodings[16] = (InstEncoding){unsupportedInstruction, "lsl"};
 	encodings[17] = (InstEncoding){unsupportedInstruction, "mla"};
-	encodings[18] = (InstEncoding){mov, "mov"};
+	encodings[18] = (InstEncoding){unsupportedInstruction, "mov"};
 	encodings[19] = (InstEncoding){unsupportedInstruction, "mrs"};
 	encodings[20] = (InstEncoding){unsupportedInstruction, "msr"};
 	encodings[21] = (InstEncoding){unsupportedInstruction, "mul"};
@@ -234,7 +264,6 @@ int main(int argc, char **argv) {
 
 	unsigned long line_num = 0;
 	unsigned long file_line_num = 1;
-	lines[line_num] = (struct Line){asm_buffer, file_line_num, CODE};
 
 	uint32_t track_rom_size = 0;
 	unsigned long labels_arr_size = 64;
@@ -242,25 +271,45 @@ int main(int argc, char **argv) {
 	unsigned long label_tot = 0;
 
 	bool comment = false;
+	bool inside_mem_oprnd = false;
+	int count_blocks = 1;
+	struct InstructionBlock blocks[MAX_INSTRUCTION_BLOCKS];
+
+	lines[0] = (struct Line){asm_buffer, NULL, 0, CODE}; // FIXME: consider the case where line 0 is not code but like a comment or something; verify this would still work
+	blocks[0] = (struct InstructionBlock){asm_buffer, FIRST};
 
 	char *asm_buffer_end = asm_buffer + asm_size;
 	for (char *c = asm_buffer; c <= asm_buffer_end; c++) {
 		if (*c == '\n') {
 			comment = false;
+			if (inside_mem_oprnd) {
+				printf("Memory operand not closed properly on line %lu\n", file_line_num);
+				inside_mem_oprnd = false;
+			}
 			file_line_num++;
 
-			if (!(c != asm_buffer_end && (*(c + 1) == '\n' || *(c + 1) == ';'))) {
-				if (lines[line_num].type == CODE) {
-					track_rom_size += 4;
+			if (lines[line_num].type == CODE) {
+				Inst *inst = malloc(sizeof(*inst));
+				inst->line = &(lines[line_num]);
+				inst->blocks = malloc(count_blocks * sizeof(struct InstructionBlock));
+				for (int i = 0; i < count_blocks; i++) {
+					inst->blocks[i] = blocks[i];
 				}
+				inst->block_count = count_blocks;
 
+				lines[line_num].data = (void *)inst;
+
+				track_rom_size += 4;
+			}
+
+			if (!(c != asm_buffer_end && (*(c + 1) == '\n' || *(c + 1) == ';'))) {
 				if (++line_num + 1 == lines_arr_size) {
 					lines_arr_size *= 2;
 					lines = realloc(lines, lines_arr_size * sizeof(*lines));
 				}
 
 				if (c != asm_buffer_end) {
-					lines[line_num] = (struct Line){c + 1, file_line_num, CODE};
+					lines[line_num] = (struct Line){c + 1, NULL, file_line_num, CODE};
 					if (*(c + 1) == '@') {
 						switch (getLowerChar(*(c + 2))) {
 							case 'i':
@@ -286,20 +335,22 @@ int main(int argc, char **argv) {
 											track_rom_size += lines[line_num].type;
 										}
 									}
-									c--;
 								}
 								break;
 							default:
 								lines[line_num].type = DIR_UNK;
 								break;
 						}
+					} else {
+						blocks[0] = (struct InstructionBlock){c + 1, FIRST};
+						count_blocks = 1;
 					}
-					// maybe start processing instructions here and then encode in the second pass later
 				}
 			}
 		}
 
 		if (!comment) {
+			printf("%c", *c); // TODO: remove debug line
 			switch (*c) {
 				case ';':
 					comment = true;
@@ -337,13 +388,23 @@ int main(int argc, char **argv) {
 					}
 
 					break;
+				case ',':
+					count_blocks++;
+					// store oprnd *start but first make sure the number of operands are not too large (if too large, there must be a problem)
+					if (count_blocks <= MAX_INSTRUCTION_BLOCKS) {
+						blocks[count_blocks - 1] = (struct InstructionBlock){c + 1, inside_mem_oprnd ? MEM_REG : REG};
+					} else {
+						printf("Too many operands on line %lu\n", file_line_num);
+					}
+
+					break;
 				default:
 					*c = getLowerChar(*c);
 					break;
 			}
 		}
 	}
-	lines[line_num] = (struct Line){NULL, file_line_num, END};
+	lines[line_num] = (struct Line){NULL, NULL, file_line_num, END};
 
 
 	InstEncoding *encodings = createEncodings();
@@ -356,8 +417,22 @@ int main(int argc, char **argv) {
 			// TODO: start processing lines: need to process byte define directives, and create instruction encodings for each instruction line, ... more most certainly
 			printf("%c", *c);
 		}
-
 		printf("\n");
+
+		if (lines[i].type == CODE) {
+			Inst *inst = (Inst *)(lines[i].data);
+
+			printf("\t\t");
+			for (int bi = 0; bi < inst->block_count; bi++) {
+				if (bi != 0) {
+					printf("\t,\t");
+				}
+				for (char *c = inst->blocks[bi].start; *c != ',' && *c != '\n' && *c != ';'; c++) {
+					printf("%c", *c);
+				}
+			}
+			printf("\n");
+		}
 	}
 
 	printf("Rom size: %lu bytes\n", (unsigned long)track_rom_size);
@@ -388,6 +463,15 @@ int main(int argc, char **argv) {
 	fclose(gba_file);
 
 	free(encodings);
+	for (int i = 0; i < line_num; i++) {
+		void *line_data = lines[i].data;
+		if (line_data != NULL) {
+			if (lines[i].type == CODE) {
+				free(((struct Instruction *)line_data)->blocks);
+			}
+			free(line_data);
+		}
+	}
 	free(labels);
 	free(lines);
 	free(asm_buffer);
