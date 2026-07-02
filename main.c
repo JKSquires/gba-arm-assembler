@@ -147,7 +147,7 @@ uint16_t imm12(uint32_t val, Inst *i) {
 	return (r << 8) | imm8;
 }
 
-/*
+/* will likely need rework, it was fun to mess around earlier though
 uint32_t mov(Inst *i) {
 	uint32_t encoding = 0;
 
@@ -398,9 +398,48 @@ int main(int argc, char **argv) {
 					}
 
 					break;
-				// TODO: need to get cases and determine block types (and track inside_mem_oprnd)
+				case '[':
+					if (inside_mem_oprnd == true) {
+						printf("Broken memory operand on line %lu\n", file_line_num);
+					}
+
+					inside_mem_oprnd = true;
+					blocks[count_blocks - 1].type = blocks[count_blocks - 1].type == REG ? MEM_REG :
+													blocks[count_blocks - 1].type == IMM ? MEM_IMM :
+													blocks[count_blocks - 1].type == LBL ? MEM_LBL :
+													blocks[count_blocks - 1].type == SHIFT_REG ? MEM_SHIFT_REG :
+																							MEM_SHIFT_IMM;
+
+					break;
+				case ']':
+					if (inside_mem_oprnd == false) {
+						printf("Broken memory operand on line %lu\n", file_line_num);
+					}
+
+					inside_mem_oprnd = false;
+					/* think about order
+					blocks[count_blocks - 1].type = blocks[count_blocks - 1].type == MEM_REG ? REG :
+													blocks[count_blocks - 1].type == MEM_IMM ? IMM :
+													blocks[count_blocks - 1].type == MEM_LBL ? LBL :
+													blocks[count_blocks - 1].type == MEM_SHIFT_REG ? SHIFT_REG :
+																								SHIFT_IMM;
+					*/
+					break;
 				default:
 					*c = getLowerChar(*c);
+
+					enum BlockType block_type = blocks[count_blocks - 1].type;
+					if (block_type == REG || block_type == MEM_REG) {
+						switch (*c) {
+							case '$': // fall through
+							case '%':
+								blocks[count_blocks - 1].type = blocks[count_blocks - 1].type == REG ? IMM : MEM_IMM;
+								
+								break;
+							// TODO: we need to differentiate between registers, labels, and shifts. May be able to just check first two chars in the block (after whitespace and other things like '[') to see r* where * is any number 0-9. we should probably also store if we've determined if it is truely a register, or we can just set the default to something else instead of REG. Shift, just check for "asl", "asr", "lsl", and "lsr" then check for register or immediate
+						}
+					}
+
 					break;
 			}
 		}
@@ -410,7 +449,10 @@ int main(int argc, char **argv) {
 
 	InstEncoding *encodings = createEncodings();
 
-	printf("DIR_B = %d, DIR_H = %d, DIR_W = %d, CODE = %d, LABEL = %d, END = %d, DIR_UNK = %d, DIR_INC = %d\n---\nLine:\tType:\n", DIR_B, DIR_H, DIR_W, CODE, LABEL, END, DIR_UNK, DIR_INC);
+	printf("DIR_B = %d, DIR_H = %d, DIR_W = %d, CODE = %d, LABEL = %d, END = %d, DIR_UNK = %d, DIR_INC = %d\n", DIR_B, DIR_H, DIR_W, CODE, LABEL, END, DIR_UNK, DIR_INC);
+	printf("FIRST = %d, REG = %d, IMM = %d, LBL = %d, SHIFT_REG = %d, SHIFT_IMM = %d, MEM_REG = %d, MEM_IMM = %d, MEM_LBL = %d, MEM_SHIFT_REG = %d, MEM_SHIFT_IMM = %d\n", FIRST, REG, IMM, LBL, SHIFT_REG, SHIFT_IMM, MEM_REG, MEM_IMM, MEM_LBL, MEM_SHIFT_REG, MEM_SHIFT_IMM);
+	printf("---\nLine:\tType:\n");
+
 	for (int i = 0; i < line_num; i++) {
 		printf("%lu:\t%d:\t", lines[i].line_num, lines[i].type);
 
@@ -420,6 +462,7 @@ int main(int argc, char **argv) {
 		}
 		printf("\n");
 
+		// TODO: remove all this debug stuff
 		if (lines[i].type == CODE) {
 			Inst *inst = (Inst *)(lines[i].data);
 
@@ -428,6 +471,7 @@ int main(int argc, char **argv) {
 				if (bi != 0) {
 					printf("\t,\t");
 				}
+				printf("(%d)", inst->blocks[bi].type);
 				for (char *c = inst->blocks[bi].start; *c != ',' && *c != '\n' && *c != ';'; c++) {
 					printf("%c", *c);
 				}
