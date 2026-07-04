@@ -478,8 +478,11 @@ int main(int argc, char **argv) {
 
 								if (c3[0] == 'l' && c3[1] == 's' && c3[2] == 'l'
 									|| c3[0] == 'l' && c3[1] == 's' && c3[2] == 'r'
-									|| c3[0] == 'a' && c3[1] == 's' && c3[2] == 'l'
 									|| c3[0] == 'a' && c3[1] == 's' && c3[2] == 'r') {
+
+									if (c3[0] == 'a' && c3[1] == 's' && c3[2] == 'l') { // handle arithmetic left shift
+										*c = 'l';
+									}
 
 									char *skip_shift_whitespace = skipWhitespace(c + 3);
 									if (skip_shift_whitespace == c + 3) break;
