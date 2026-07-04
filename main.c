@@ -5,7 +5,7 @@
 
 
 #define ENCODINGS_COUNT 45
-#define MAX_INSTRUCTION_BLOCKS 4 // TODO: check that 4 is the max number of blocks a valid instruction can have
+#define MAX_INSTRUCTION_BLOCKS 4 // FIXME: 4 is the max number of blocks a valid instruction can have excluding in multiple register operands/blocks (e.g. {r0, r3-r5, r10}). We need to figure out how we want to deal with those.
 
 
 typedef struct Instruction Inst;
@@ -47,6 +47,7 @@ enum InstructionCondition {
 //};
 
 enum BlockType {
+	UNKNOWN_BLOCK,
 	FIRST,
 	REG,
 	IMM,
@@ -57,7 +58,14 @@ enum BlockType {
 	MEM_IMM,
 	MEM_LBL,
 	MEM_SHIFT_REG,
-	MEM_SHIFT_IMM
+	MEM_SHIFT_IMM,
+	MUL_REG
+};
+
+enum OperandState {
+	REGULAR,
+	MEMORY,
+	MULTIPLE
 };
 
 struct Line {
@@ -110,6 +118,12 @@ char getLowerChar(char c) {
 	if (c >= 'A' && c <= 'Z') {
 		return (c - 'A') + 'a';
 	}
+
+	return c;
+}
+
+char *skipWhitespace(char *c) {
+	for (; *c == ' ' || *c == '\t'; c++);
 
 	return c;
 }
@@ -271,7 +285,7 @@ int main(int argc, char **argv) {
 	unsigned long label_tot = 0;
 
 	bool comment = false;
-	bool inside_mem_oprnd = false;
+	enum OperandState track_operand_state = REGULAR;
 	int count_blocks = 1;
 	struct InstructionBlock blocks[MAX_INSTRUCTION_BLOCKS];
 
@@ -282,9 +296,9 @@ int main(int argc, char **argv) {
 	for (char *c = asm_buffer; c <= asm_buffer_end; c++) {
 		if (*c == '\n') {
 			comment = false;
-			if (inside_mem_oprnd) {
-				printf("Memory operand not closed properly on line %lu\n", file_line_num);
-				inside_mem_oprnd = false;
+			if (track_operand_state != REGULAR) {
+				printf("Memory/multiple register operand not closed properly on line %lu\n", file_line_num);
+				track_operand_state = REGULAR;
 			}
 			file_line_num++;
 
@@ -309,6 +323,7 @@ int main(int argc, char **argv) {
 				}
 
 				if (c != asm_buffer_end) {
+					c = skipWhitespace(c + 1) - 1;
 					lines[line_num] = (struct Line){c + 1, NULL, file_line_num, CODE};
 					if (*(c + 1) == '@') {
 						switch (getLowerChar(*(c + 2))) {
@@ -330,17 +345,20 @@ int main(int argc, char **argv) {
 															k == 'h' ? DIR_H :
 																		DIR_W;
 
-									 for (c += 3; *c != '\n'; c++) {
+									for (c += 3; *c != '\n'; c++) {
 										if (*c == '$' || *c == '%') {
 											track_rom_size += lines[line_num].type;
 										}
 									}
+									c--;
 								}
 								break;
 							default:
 								lines[line_num].type = DIR_UNK;
 								break;
 						}
+
+						continue;
 					} else {
 						blocks[0] = (struct InstructionBlock){c + 1, FIRST};
 						count_blocks = 1;
@@ -392,51 +410,88 @@ int main(int argc, char **argv) {
 					count_blocks++;
 
 					if (count_blocks <= MAX_INSTRUCTION_BLOCKS) {
-						blocks[count_blocks - 1] = (struct InstructionBlock){c + 1, inside_mem_oprnd ? MEM_REG : REG};
+						c = skipWhitespace(c + 1) - 1;
+						blocks[count_blocks - 1] = (struct InstructionBlock){c + 1, track_operand_state != MULTIPLE ? UNKNOWN_BLOCK : MUL_REG};
 					} else {
 						printf("Too many operands on line %lu\n", file_line_num);
 					}
 
 					break;
 				case '[':
-					if (inside_mem_oprnd == true) {
+					if (track_operand_state != REGULAR) {
 						printf("Broken memory operand on line %lu\n", file_line_num);
 					}
 
-					inside_mem_oprnd = true;
-					blocks[count_blocks - 1].type = blocks[count_blocks - 1].type == REG ? MEM_REG :
-													blocks[count_blocks - 1].type == IMM ? MEM_IMM :
-													blocks[count_blocks - 1].type == LBL ? MEM_LBL :
-													blocks[count_blocks - 1].type == SHIFT_REG ? MEM_SHIFT_REG :
-																							MEM_SHIFT_IMM;
+					track_operand_state = MEMORY;
 
 					break;
 				case ']':
-					if (inside_mem_oprnd == false) {
+					if (track_operand_state != MEMORY) {
 						printf("Broken memory operand on line %lu\n", file_line_num);
 					}
 
-					inside_mem_oprnd = false;
-					/* think about order
-					blocks[count_blocks - 1].type = blocks[count_blocks - 1].type == MEM_REG ? REG :
-													blocks[count_blocks - 1].type == MEM_IMM ? IMM :
-													blocks[count_blocks - 1].type == MEM_LBL ? LBL :
-													blocks[count_blocks - 1].type == MEM_SHIFT_REG ? SHIFT_REG :
-																								SHIFT_IMM;
-					*/
+					track_operand_state = REGULAR;
+
+					break;
+				case '{':
+					if (blocks[count_blocks - 1].type != UNKNOWN_BLOCK) {
+						printf("Broken multiple register operand on line %lu\n", file_line_num);
+					}
+
+					track_operand_state = MULTIPLE;
+					blocks[count_blocks - 1].type = MUL_REG;
+
+					break;
+				case '}':
+					if (blocks[count_blocks - 1].type != MUL_REG) {
+						printf("Broken multiple register operand on line %lu\n", file_line_num);
+					}
+
+					track_operand_state = REGULAR;
+
 					break;
 				default:
 					*c = getLowerChar(*c);
 
 					enum BlockType block_type = blocks[count_blocks - 1].type;
-					if (block_type == REG || block_type == MEM_REG) {
+					if (block_type == UNKNOWN_BLOCK) {
 						switch (*c) {
 							case '$': // fall through
+							case '#': // fall through
 							case '%':
-								blocks[count_blocks - 1].type = blocks[count_blocks - 1].type == REG ? IMM : MEM_IMM;
+								blocks[count_blocks - 1].type = track_operand_state == REGULAR ? IMM : MEM_IMM;
 								
 								break;
-							// TODO: we need to differentiate between registers, labels, and shifts. May be able to just check first two chars in the block (after whitespace and other things like '[') to see r* where * is any number 0-9. we should probably also store if we've determined if it is truely a register, or we can just set the default to something else instead of REG. Shift, just check for "asl", "asr", "lsl", and "lsr" then check for register or immediate
+							case 'r':
+								if (*(c + 1) >= '0' && *(c + 1) <= '9') {
+									blocks[count_blocks - 1].type = track_operand_state == REGULAR ? REG : MEM_REG;
+								}
+
+								break;
+							default:
+								blocks[count_blocks - 1].type = LBL;
+
+								char c3[] = {0, 0, 0};
+								c3[0] = getLowerChar(*c);
+								if (c3[0] != '\n') c3[1] = getLowerChar(*(c + 1));
+								if (c3[1] != '\n') c3[2] = getLowerChar(*(c + 2));
+
+								if (c3[0] == 'l' && c3[1] == 's' && c3[2] == 'l'
+									|| c3[0] == 'l' && c3[1] == 's' && c3[2] == 'r'
+									|| c3[0] == 'a' && c3[1] == 's' && c3[2] == 'l'
+									|| c3[0] == 'a' && c3[1] == 's' && c3[2] == 'r') {
+
+									char *skip_shift_whitespace = skipWhitespace(c + 3);
+									if (skip_shift_whitespace == c + 3) break;
+
+									if (*skip_shift_whitespace == '$' || *skip_shift_whitespace == '#' || *skip_shift_whitespace == '%') {
+										blocks[count_blocks - 1].type = track_operand_state == REGULAR ? SHIFT_IMM : MEM_SHIFT_IMM;
+									} else {
+										blocks[count_blocks - 1].type = track_operand_state == REGULAR ? SHIFT_REG : MEM_SHIFT_REG;
+									}
+								}
+
+								break;
 						}
 					}
 
@@ -450,7 +505,7 @@ int main(int argc, char **argv) {
 	InstEncoding *encodings = createEncodings();
 
 	printf("DIR_B = %d, DIR_H = %d, DIR_W = %d, CODE = %d, LABEL = %d, END = %d, DIR_UNK = %d, DIR_INC = %d\n", DIR_B, DIR_H, DIR_W, CODE, LABEL, END, DIR_UNK, DIR_INC);
-	printf("FIRST = %d, REG = %d, IMM = %d, LBL = %d, SHIFT_REG = %d, SHIFT_IMM = %d, MEM_REG = %d, MEM_IMM = %d, MEM_LBL = %d, MEM_SHIFT_REG = %d, MEM_SHIFT_IMM = %d\n", FIRST, REG, IMM, LBL, SHIFT_REG, SHIFT_IMM, MEM_REG, MEM_IMM, MEM_LBL, MEM_SHIFT_REG, MEM_SHIFT_IMM);
+	printf("UNKNOWN_BLOCK = %d, FIRST = %d, REG = %d, IMM = %d, LBL = %d, SHIFT_REG = %d, SHIFT_IMM = %d, MEM_REG = %d, MEM_IMM = %d, MEM_LBL = %d, MEM_SHIFT_REG = %d, MEM_SHIFT_IMM = %d, MUL_REG = %d\n", UNKNOWN_BLOCK, FIRST, REG, IMM, LBL, SHIFT_REG, SHIFT_IMM, MEM_REG, MEM_IMM, MEM_LBL, MEM_SHIFT_REG, MEM_SHIFT_IMM, MUL_REG);
 	printf("---\nLine:\tType:\n");
 
 	for (int i = 0; i < line_num; i++) {
