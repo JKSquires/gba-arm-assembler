@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 
 #define ENCODINGS_COUNT 45
@@ -68,6 +69,12 @@ enum OperandState {
 	MULTIPLE
 };
 
+enum NumType {
+	BIN,
+	DEC,
+	HEX
+};
+
 struct Line {
 	char *start; // TODO: might be nice to get rid of this
 	void *data;
@@ -128,12 +135,16 @@ char *skipWhitespace(char *c) {
 	return c;
 }
 
-void encodingIssue(Inst *i) {
-	printf("Issue on line %lu: ", i->line->line_num);
-	for (char *c = i->line->start; *c != '\n'; c++) {
+void lineIssue(struct Line *line) {
+	printf("Issue on line %lu: ", line->line_num);
+	for (char *c = line->start; *c != '\n'; c++) {
 		printf("%c", *c);
 	}
 	printf("\n");
+}
+
+void encodingIssue(Inst *i) { // FIXME: do we really need this anymore, maybe just refactor calls
+	lineIssue(i->line);
 }
 
 uint8_t readReg(char *reg, Inst *i) {
@@ -190,7 +201,7 @@ uint32_t unsupportedInstruction(Inst *i) {
 }
 
 InstEncoding *createEncodings() {
-	InstEncoding *encodings = malloc(ENCODINGS_COUNT * sizeof(*encodings));
+	InstEncoding *encodings = malloc(ENCODINGS_COUNT * sizeof *encodings);
 
 	// maybe instead of one function for each, find patterns like (Rd, Rn, <Oprnd2>), (imm24), (Rt, [Rn, +/- Rm{, <shift>}]{!}), etc. and make functions for those?
 	encodings[0] = (InstEncoding){unsupportedInstruction, "adc"};
@@ -274,14 +285,14 @@ int main(int argc, char **argv) {
 	fclose(asm_file);
 
 	unsigned long lines_arr_size = 256;
-	struct Line *lines = malloc(lines_arr_size * sizeof(*lines));
+	struct Line *lines = malloc(lines_arr_size * sizeof *lines);
 
 	unsigned long line_num = 0;
 	unsigned long file_line_num = 1;
 
-	uint32_t track_rom_size = 0;
+	uint32_t track_rom_size = 0; // FIXME: right now, this relies on the first line being code or a directive. Need to account for empty start line or commented line. Maybe we can create a line type "SKIP" as a quick fix, but there should be a better way
 	unsigned long labels_arr_size = 64;
-	struct Label *labels = malloc(labels_arr_size * sizeof(*labels)); // FIXME: should absolutely use a hash table at some point instead
+	struct Label *labels = malloc(labels_arr_size * sizeof *labels); // FIXME: should absolutely use a hash table at some point instead
 	unsigned long label_tot = 0;
 
 	bool comment = false;
@@ -289,7 +300,7 @@ int main(int argc, char **argv) {
 	int count_blocks = 1;
 	struct InstructionBlock blocks[MAX_INSTRUCTION_BLOCKS];
 
-	lines[0] = (struct Line){asm_buffer, NULL, 0, CODE}; // TODO: consider the case where line 0 is not code but like a comment or something; verify this would still work
+	lines[0] = (struct Line){asm_buffer, NULL, 0, CODE};
 	blocks[0] = (struct InstructionBlock){asm_buffer, FIRST};
 
 	char *asm_buffer_end = asm_buffer + asm_size;
@@ -303,9 +314,9 @@ int main(int argc, char **argv) {
 			file_line_num++;
 
 			if (lines[line_num].type == CODE) {
-				Inst *inst = malloc(sizeof(*inst));
+				Inst *inst = malloc(sizeof *inst);
 				inst->line = &(lines[line_num]);
-				inst->blocks = malloc(count_blocks * sizeof(struct InstructionBlock));
+				inst->blocks = malloc(count_blocks * sizeof (struct InstructionBlock));
 				for (int i = 0; i < count_blocks; i++) {
 					inst->blocks[i] = blocks[i];
 				}
@@ -314,62 +325,79 @@ int main(int argc, char **argv) {
 				lines[line_num].data = (void *)inst;
 
 				track_rom_size += 4;
+				printf("\nROM size: %lu bytes\n", (unsigned long)track_rom_size);
 			}
 
-			if (!(c != asm_buffer_end && (*(c + 1) == '\n' || *(c + 1) == ';'))) {
+			char *next_start = skipWhitespace(c + 1);
+			while (*next_start == '\n' || *next_start == ';') {
+				printf("\nLine %lu found empty\n", file_line_num);
+				if (next_start == asm_buffer_end) {
+					c = next_start;
+					break;
+				} else {
+					for (c = next_start; *c != '\n'; c++);
+
+					file_line_num++;
+
+					next_start = skipWhitespace(c + 1);
+				}
+			}
+
+			if (c != asm_buffer_end) {
 				if (++line_num + 1 == lines_arr_size) {
 					lines_arr_size *= 2;
-					lines = realloc(lines, lines_arr_size * sizeof(*lines));
+					lines = realloc(lines, lines_arr_size * sizeof *lines);
 				}
 
-				if (c != asm_buffer_end) {
-					c = skipWhitespace(c + 1) - 1;
-					lines[line_num] = (struct Line){c + 1, NULL, file_line_num, CODE};
-					if (*(c + 1) == '@') {
-						switch (getLowerChar(*(c + 2))) {
-							case 'i':
-								if (getLowerChar(*(c + 3)) == 'n'
-									&& getLowerChar(*(c + 4)) == 'c'
-									&& getLowerChar(*(c + 5)) == ' ') {
-									printf("\nInclude directive is unsupported right now\n");
-									lines[line_num].type = DIR_INC;
+				c = next_start - 1;
+				lines[line_num] = (struct Line){c + 1, NULL, file_line_num, CODE};
+				printf("\nWrite line %lu starting with '%c'\n", file_line_num, *(c + 1));
 
-									c += 5;
-								}
-							case 'b': // fall through
-							case 'h': // fall through
-							case 'w':
-								if (*(c + 3) == ' ') {
-									char k = getLowerChar(*(c + 2));
-									lines[line_num].type = k == 'b' ? DIR_B :
-															k == 'h' ? DIR_H :
-																		DIR_W;
-
-									for (c += 3; *c != '\n'; c++) {
-										if (*c == '$' || *c == '%') {
-											track_rom_size += lines[line_num].type;
-										}
-									}
-									c--;
-								}
-								break;
-							default:
-								lines[line_num].type = DIR_UNK;
-								break;
-						}
-
-						continue;
-					} else {
-						blocks[0] = (struct InstructionBlock){c + 1, FIRST};
-						count_blocks = 1;
-					}
-				}
+				blocks[0] = (struct InstructionBlock){c + 1, FIRST};
+				count_blocks = 1;
+			} else {
+				break;
 			}
 		}
 
 		if (!comment) {
-			printf("%c", *c); // TODO: remove debug line
+			printf("<%c>", *c); // TODO: remove debug line
+
 			switch (*c) {
+				case '@':
+					switch (getLowerChar(*(c + 1))) {
+						case 'i':
+							if (getLowerChar(*(c + 2)) == 'n'
+								&& getLowerChar(*(c + 3)) == 'c'
+								&& getLowerChar(*(c + 4)) == ' ') {
+								printf("\nInclude directive is unsupported right now\n");
+								lines[line_num].type = DIR_INC;
+
+								c += 4;
+							}
+						case 'b': // fall through
+						case 'h': // fall through
+						case 'w':
+							if (*(c + 2) == ' ') {
+								char k = getLowerChar(*(c + 1));
+								lines[line_num].type = k == 'b' ? DIR_B :
+														k == 'h' ? DIR_H :
+																	DIR_W;
+
+								for (c += 2; *c != '\n'; c++) {
+									if (*c == '$' || *c == '#' || *c == '%') {
+										track_rom_size += lines[line_num].type;
+									}
+								}
+								c--;
+							}
+							break;
+						default:
+							lines[line_num].type = DIR_UNK;
+							break;
+					}
+
+					continue;
 				case ';':
 					comment = true;
 					break;
@@ -398,7 +426,7 @@ int main(int argc, char **argv) {
 					if (!is_dup) {
 						if (label_tot == labels_arr_size) {
 							labels_arr_size *= 2;
-							labels = realloc(labels, labels_arr_size * sizeof(*labels));
+							labels = realloc(labels, labels_arr_size * sizeof *labels);
 						}
 
 						labels[label_tot] = (struct Label){lines[line_num].start, track_rom_size};
@@ -502,43 +530,134 @@ int main(int argc, char **argv) {
 			}
 		}
 	}
-	lines[line_num] = (struct Line){NULL, NULL, file_line_num, END};
+	//lines[line_num] = (struct Line){NULL, NULL, file_line_num, END};
 
 
 	InstEncoding *encodings = createEncodings();
+	unsigned char *rom = calloc(track_rom_size, 1);
+	unsigned long rom_offset = 0;
 
 	printf("DIR_B = %d, DIR_H = %d, DIR_W = %d, CODE = %d, LABEL = %d, END = %d, DIR_UNK = %d, DIR_INC = %d\n", DIR_B, DIR_H, DIR_W, CODE, LABEL, END, DIR_UNK, DIR_INC);
 	printf("UNKNOWN_BLOCK = %d, FIRST = %d, REG = %d, IMM = %d, LBL = %d, SHIFT_REG = %d, SHIFT_IMM = %d, MEM_REG = %d, MEM_IMM = %d, MEM_LBL = %d, MEM_SHIFT_REG = %d, MEM_SHIFT_IMM = %d, MUL_REG = %d\n", UNKNOWN_BLOCK, FIRST, REG, IMM, LBL, SHIFT_REG, SHIFT_IMM, MEM_REG, MEM_IMM, MEM_LBL, MEM_SHIFT_REG, MEM_SHIFT_IMM, MUL_REG);
 	printf("---\nLine:\tType:\n");
 
-	for (int i = 0; i < line_num; i++) {
+	for (int i = 0; i <= line_num; i++) {
 		printf("%lu:\t%d:\t", lines[i].line_num, lines[i].type);
 
+		/*
 		for (char *c = lines[i].start; *c != '\n' && *c != ';'; c++) {
 			// TODO: start processing lines: need to process byte define directives, and create instruction encodings for each instruction line, ... more most certainly
 			printf("%c", *c);
 		}
 		printf("\n");
+		*/
 
-		// TODO: remove all this debug stuff
-		if (lines[i].type == CODE) {
-			Inst *inst = (Inst *)(lines[i].data);
+		switch (lines[i].type) {
+			case CODE:
+				Inst *inst = (Inst *)(lines[i].data);
 
-			printf("\t\t");
-			for (int bi = 0; bi < inst->block_count; bi++) {
-				if (bi != 0) {
-					printf("\t,\t");
+				printf("\t\t");
+				for (int bi = 0; bi < inst->block_count; bi++) {
+					if (bi != 0) {
+						printf("\t,\t");
+					}
+					printf("(%d)", inst->blocks[bi].type);
+					for (char *c = inst->blocks[bi].start; *c != ',' && *c != '\n' && *c != ';'; c++) {
+						printf("%c", *c);
+					}
 				}
-				printf("(%d)", inst->blocks[bi].type);
-				for (char *c = inst->blocks[bi].start; *c != ',' && *c != '\n' && *c != ';'; c++) {
+				printf("\n");
+
+				uint32_t encoding = 0xCCCCCCCC; // TODO: encode CODE lines and write into the ROM buffer
+				memcpy(rom + rom_offset, &encoding, sizeof encoding);
+				rom_offset += 4;
+
+				break;
+			case DIR_B:
+			case DIR_H:
+			case DIR_W:
+				printf("\t\t");
+
+				for (char *c = lines[i].start; *c != '\n' && *c != ';'; c++) {
 					printf("%c", *c);
+
+					if (*c == '$' || *c == '#' || *c == '%') {
+						enum NumType num_type = *c == '$' ? HEX :
+												*c == '#' ? DEC :
+															BIN;
+						switch (lines[i].type) {
+							case DIR_B:
+								uint8_t byte = 0;
+								for (c++; (*c >= '0' && *c <= '9') || (getLowerChar(*c) >= 'a' && getLowerChar(*c) <= 'f'); c++) {
+									printf("%c", *c);
+									switch (num_type) {
+										case HEX:
+											byte <<= 4;
+											if (*c >= '0' && *c <= '9') {
+												byte += *c - '0';
+											} else {
+												byte += 10 + (getLowerChar(*c) - 'a');
+											}
+
+											break;
+										case DEC:
+											byte *= 10;
+											if (*c >= '0' && *c <= '9') {
+												byte += *c - '0';
+											} else {
+												printf("Broken decimal literal: ");
+												lineIssue(&lines[i]);
+											}
+
+											break;
+										case BIN:
+											byte <<= 1;
+											if (*c == '0' || *c || '1') {
+												byte += *c - '0';
+											} else {
+												printf("Broken binary literal: ");
+												lineIssue(&lines[i]);
+											}
+
+											break;
+									}
+								}
+								c--;
+
+								rom[rom_offset] = byte;
+								rom_offset++;
+
+								break;
+							case DIR_H:
+								uint16_t halfword = 0;
+								halfword += 0xAAAA; // TODO: read actual value
+
+								memcpy(rom + rom_offset, &halfword, sizeof halfword);
+								rom_offset += 2;
+
+								break;
+							case DIR_W:
+								uint32_t word = 0;
+								word += 0xDDDDDDDD; // TODO: read actual value
+
+								memcpy(rom + rom_offset, &word, sizeof word);
+								rom_offset += 4;
+
+								break;
+						}
+					}
 				}
-			}
-			printf("\n");
+				printf("\n");
+
+				break;
+			default:
+				printf("\n");
+
+				break;
 		}
 	}
 
-	printf("Rom size: %lu bytes\n", (unsigned long)track_rom_size);
+	printf("ROM size: %lu bytes\n", (unsigned long)track_rom_size);
 
 
 	if (argc > 2) {
@@ -552,7 +671,7 @@ int main(int argc, char **argv) {
 			return -102;
 		}
 	} else {
-		gba_file = fopen("a.gba", "w");
+		gba_file = fopen("a.gba", "wb");
 
 		if (gba_file == NULL) {
 			fprintf(stderr, "ERROR: Error creating or opening output GBA file\n");
@@ -563,8 +682,11 @@ int main(int argc, char **argv) {
 		}
 	}
 
+	fwrite(rom, track_rom_size, 1, gba_file);
+
 	fclose(gba_file);
 
+	free(rom);
 	free(encodings);
 	for (int i = 0; i < line_num; i++) {
 		void *line_data = lines[i].data;
