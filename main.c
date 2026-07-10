@@ -2,7 +2,6 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 
 #define ENCODINGS_COUNT 45
@@ -74,6 +73,7 @@ enum NumType {
 	DEC,
 	HEX
 };
+
 
 struct Line {
 	char *start; // TODO: might be nice to get rid of this
@@ -569,7 +569,10 @@ int main(int argc, char **argv) {
 				printf("\n");
 
 				uint32_t encoding = 0xCCCCCCCC; // TODO: encode CODE lines and write into the ROM buffer
-				memcpy(rom + rom_offset, &encoding, sizeof encoding);
+				rom[rom_offset] = (uint8_t)encoding;
+				rom[rom_offset + 1] = (uint8_t)(encoding >> 8);
+				rom[rom_offset + 2] = (uint8_t)(encoding >> 16);
+				rom[rom_offset + 3] = (uint8_t)(encoding >> 24);
 				rom_offset += 4;
 
 				break;
@@ -585,62 +588,61 @@ int main(int argc, char **argv) {
 						enum NumType num_type = *c == '$' ? HEX :
 												*c == '#' ? DEC :
 															BIN;
+
+						uint32_t val = 0;
+						for (c++; (*c >= '0' && *c <= '9') || (getLowerChar(*c) >= 'a' && getLowerChar(*c) <= 'f'); c++) {
+							printf("%c", *c);
+							switch (num_type) {
+								case HEX:
+									val <<= 4;
+									if (*c >= '0' && *c <= '9') {
+										val += *c - '0';
+									} else {
+										val += 10 + (getLowerChar(*c) - 'a');
+									}
+
+									break;
+								case DEC:
+									val *= 10;
+									if (*c >= '0' && *c <= '9') {
+										val += *c - '0';
+									} else {
+										printf("Broken decimal literal: ");
+										lineIssue(&lines[i]);
+									}
+
+									break;
+								case BIN:
+									val <<= 1;
+									if (*c == '0' || *c || '1') {
+										val += *c - '0';
+									} else {
+										printf("Broken binary literal: ");
+										lineIssue(&lines[i]);
+									}
+
+									break;
+							}
+						}
+						c--;
+
 						switch (lines[i].type) {
 							case DIR_B:
-								uint8_t byte = 0;
-								for (c++; (*c >= '0' && *c <= '9') || (getLowerChar(*c) >= 'a' && getLowerChar(*c) <= 'f'); c++) {
-									printf("%c", *c);
-									switch (num_type) {
-										case HEX:
-											byte <<= 4;
-											if (*c >= '0' && *c <= '9') {
-												byte += *c - '0';
-											} else {
-												byte += 10 + (getLowerChar(*c) - 'a');
-											}
-
-											break;
-										case DEC:
-											byte *= 10;
-											if (*c >= '0' && *c <= '9') {
-												byte += *c - '0';
-											} else {
-												printf("Broken decimal literal: ");
-												lineIssue(&lines[i]);
-											}
-
-											break;
-										case BIN:
-											byte <<= 1;
-											if (*c == '0' || *c || '1') {
-												byte += *c - '0';
-											} else {
-												printf("Broken binary literal: ");
-												lineIssue(&lines[i]);
-											}
-
-											break;
-									}
-								}
-								c--;
-
-								rom[rom_offset] = byte;
+								rom[rom_offset] = (uint8_t)val;
 								rom_offset++;
 
 								break;
 							case DIR_H:
-								uint16_t halfword = 0;
-								halfword += 0xAAAA; // TODO: read actual value
-
-								memcpy(rom + rom_offset, &halfword, sizeof halfword);
+								rom[rom_offset] = (uint8_t)val;
+								rom[rom_offset + 1] = (uint8_t)(val >> 8);
 								rom_offset += 2;
 
 								break;
 							case DIR_W:
-								uint32_t word = 0;
-								word += 0xDDDDDDDD; // TODO: read actual value
-
-								memcpy(rom + rom_offset, &word, sizeof word);
+								rom[rom_offset] = (uint8_t)val;
+								rom[rom_offset + 1] = (uint8_t)(val >> 8);
+								rom[rom_offset + 2] = (uint8_t)(val >> 16);
+								rom[rom_offset + 3] = (uint8_t)(val >> 24);
 								rom_offset += 4;
 
 								break;
@@ -657,7 +659,17 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	printf("ROM size: %lu bytes\n", (unsigned long)track_rom_size);
+
+	printf("\n\nLabel:\t\tOffset:\n");
+	for (int i = 0; i < label_tot; i++) {
+		for (char *c = labels[i].start; *c != ':'; c++) {
+			printf("%c", *c);
+		}
+
+		printf("\t\t%lu\n", (unsigned long)(labels[i].offset));
+	}
+
+	printf("\n\nROM size: %lu bytes\n", (unsigned long)track_rom_size);
 
 
 	if (argc > 2) {
