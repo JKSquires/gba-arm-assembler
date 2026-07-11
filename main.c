@@ -662,12 +662,12 @@ int main(int argc, char **argv) {
 					// FIXME: right now, not all instructions read properly, like `blt`, which will read as `bl` + `t`, not `b` + `lt`
 					printf("Probable mnemonic #%d (%s) on line %lu\n", last_encode_success, encodings[last_encode_success].mnemonic, lines[i].line_num);
 
-					enum InstructionCondition cond = getInstCond(mnemonic_start + encodings[last_encode_success].mnemonic_length);
+					enum InstructionCondition cond = getInstCond(mnemonic_start + encodings[last_encode_success].mnemonic_length); // TODO: when AL comes through, need to check to make sure it is proper.
 					printf("Probable instruction condition: 0x%x\n", cond);
 
 					encoding |= cond << 28;
 
-					// TODO: read extra info on mnemonic like add{s}, ldr{h}, ldm{fd}, etc.
+					// TODO: read extra info on mnemonic like add{s}, ldr{h}, ldm{fd}, etc. We need to be careful of when there are conditions too (e.g. `ldreqh`). Might be easiest to find the end and grab backwards.
 				}
 
 				rom[rom_offset] = (uint8_t)encoding;
