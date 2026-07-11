@@ -42,6 +42,14 @@ enum InstructionCondition {
 	AL = 14,
 };
 
+enum InstructionSuffix {
+	COND_ONLY,
+	SET_FLAGS,
+	DATA_SIZE,
+	ADDRESSING_MODE,
+	NOP,
+};
+
 // maybe for operands, we can create a struct that stores type (register, immediate, label reference, memory operand, bit-shift, etc.) and data (union the different ones?)
 //enum Oprnd2Type {
 //	REG = 0,
@@ -98,6 +106,7 @@ struct InstructionEncoding {
 	uint32_t (*encode)(Inst *instruction);
 	char *mnemonic;
 	uint8_t mnemonic_length;
+	enum InstructionSuffix suffix;
 };
 
 /*
@@ -228,51 +237,51 @@ InstEncoding *createEncodings() {
 	InstEncoding *encodings = malloc(ENCODINGS_COUNT * sizeof *encodings);
 
 	// maybe instead of one function for each, find patterns like (Rd, Rn, <Oprnd2>), (imm24), (Rt, [Rn, +/- Rm{, <shift>}]{!}), etc. and make functions for those?
-	encodings[0] = (InstEncoding){unsupportedInstruction, "adc", 3};
-	encodings[1] = (InstEncoding){unsupportedInstruction, "add", 3};
-	encodings[2] = (InstEncoding){unsupportedInstruction, "addr", 4};
-	encodings[3] = (InstEncoding){unsupportedInstruction, "adr", 3};
-	encodings[4] = (InstEncoding){unsupportedInstruction, "adrl", 4};
-	encodings[5] = (InstEncoding){unsupportedInstruction, "and", 3};
-	encodings[6] = (InstEncoding){unsupportedInstruction, "asr", 3};
-	encodings[7] = (InstEncoding){unsupportedInstruction, "b", 1};
-	encodings[8] = (InstEncoding){unsupportedInstruction, "bic", 3};
-	encodings[9] = (InstEncoding){unsupportedInstruction, "bl", 2};
-	encodings[10] = (InstEncoding){unsupportedInstruction, "bx", 2};
-	encodings[11] = (InstEncoding){unsupportedInstruction, "cmn", 3};
-	encodings[12] = (InstEncoding){unsupportedInstruction, "cmp", 3};
-	encodings[13] = (InstEncoding){unsupportedInstruction, "eor", 3};
-	encodings[14] = (InstEncoding){unsupportedInstruction, "ldm", 3};
-	encodings[15] = (InstEncoding){unsupportedInstruction, "ldr", 3};
-	encodings[16] = (InstEncoding){unsupportedInstruction, "lsl", 3};
-	encodings[17] = (InstEncoding){unsupportedInstruction, "mla", 3};
-	encodings[18] = (InstEncoding){unsupportedInstruction, "mov", 3};
-	encodings[19] = (InstEncoding){unsupportedInstruction, "mrs", 3};
-	encodings[20] = (InstEncoding){unsupportedInstruction, "msr", 3};
-	encodings[21] = (InstEncoding){unsupportedInstruction, "mul", 3};
-	encodings[22] = (InstEncoding){unsupportedInstruction, "mvn", 3};
-	encodings[23] = (InstEncoding){unsupportedInstruction, "neg", 3};
-	encodings[24] = (InstEncoding){unsupportedInstruction, "nop", 3};
-	encodings[25] = (InstEncoding){unsupportedInstruction, "orr", 3};
-	encodings[26] = (InstEncoding){unsupportedInstruction, "pop", 3};
-	encodings[27] = (InstEncoding){unsupportedInstruction, "push", 4};
-	encodings[28] = (InstEncoding){unsupportedInstruction, "ror", 3};
-	encodings[29] = (InstEncoding){unsupportedInstruction, "rrx", 3};
-	encodings[30] = (InstEncoding){unsupportedInstruction, "rsb", 3};
-	encodings[31] = (InstEncoding){unsupportedInstruction, "rsc", 3};
-	encodings[32] = (InstEncoding){unsupportedInstruction, "sbc", 3};
-	encodings[33] = (InstEncoding){unsupportedInstruction, "smlal", 5};
-	encodings[34] = (InstEncoding){unsupportedInstruction, "smull", 5};
-	encodings[35] = (InstEncoding){unsupportedInstruction, "stm", 3};
-	encodings[36] = (InstEncoding){unsupportedInstruction, "str", 3};
-	encodings[37] = (InstEncoding){unsupportedInstruction, "sub", 3};
-	encodings[38] = (InstEncoding){unsupportedInstruction, "swi", 3};
-	encodings[39] = (InstEncoding){unsupportedInstruction, "swp", 3};
-	encodings[40] = (InstEncoding){unsupportedInstruction, "teq", 3};
-	encodings[41] = (InstEncoding){unsupportedInstruction, "tst", 3};
-	encodings[42] = (InstEncoding){unsupportedInstruction, "und", 3};
-	encodings[43] = (InstEncoding){unsupportedInstruction, "umlal", 5};
-	encodings[44] = (InstEncoding){unsupportedInstruction, "umull", 5};
+	encodings[0] =	(InstEncoding){unsupportedInstruction,	"adc",		3,	SET_FLAGS};
+	encodings[1] =	(InstEncoding){unsupportedInstruction,	"add",		3,	SET_FLAGS};
+	encodings[2] =	(InstEncoding){unsupportedInstruction,	"addr",		4,	COND_ONLY};
+	encodings[3] =	(InstEncoding){unsupportedInstruction,	"adr",		3,	COND_ONLY};
+	encodings[4] =	(InstEncoding){unsupportedInstruction,	"adrl",		4,	COND_ONLY};
+	encodings[5] =	(InstEncoding){unsupportedInstruction,	"and",		3,	SET_FLAGS};
+	encodings[6] =	(InstEncoding){unsupportedInstruction,	"asr",		3,	COND_ONLY};
+	encodings[7] =	(InstEncoding){unsupportedInstruction,	"b",		1,	COND_ONLY};
+	encodings[8] =	(InstEncoding){unsupportedInstruction,	"bic",		3,	SET_FLAGS};
+	encodings[9] =	(InstEncoding){unsupportedInstruction,	"bl",		2,	COND_ONLY};
+	encodings[10] =	(InstEncoding){unsupportedInstruction,	"bx",		2,	COND_ONLY};
+	encodings[11] =	(InstEncoding){unsupportedInstruction,	"cmn",		3,	COND_ONLY};
+	encodings[12] =	(InstEncoding){unsupportedInstruction,	"cmp",		3,	COND_ONLY};
+	encodings[13] =	(InstEncoding){unsupportedInstruction,	"eor",		3,	SET_FLAGS};
+	encodings[14] =	(InstEncoding){unsupportedInstruction,	"ldm",		3,	ADDRESSING_MODE};
+	encodings[15] =	(InstEncoding){unsupportedInstruction,	"ldr",		3,	DATA_SIZE};
+	encodings[16] =	(InstEncoding){unsupportedInstruction,	"lsl",		3,	COND_ONLY};
+	encodings[17] =	(InstEncoding){unsupportedInstruction,	"mla",		3,	SET_FLAGS};
+	encodings[18] =	(InstEncoding){unsupportedInstruction,	"mov",		3,	SET_FLAGS};
+	encodings[19] =	(InstEncoding){unsupportedInstruction,	"mrs",		3,	COND_ONLY};
+	encodings[20] =	(InstEncoding){unsupportedInstruction,	"msr",		3,	COND_ONLY};
+	encodings[21] =	(InstEncoding){unsupportedInstruction,	"mul",		3,	SET_FLAGS};
+	encodings[22] =	(InstEncoding){unsupportedInstruction,	"mvn",		3,	SET_FLAGS};
+	encodings[23] =	(InstEncoding){unsupportedInstruction,	"neg",		3,	COND_ONLY};
+	encodings[24] =	(InstEncoding){unsupportedInstruction,	"nop",		3,	NOP};
+	encodings[25] =	(InstEncoding){unsupportedInstruction,	"orr",		3,	SET_FLAGS};
+	encodings[26] =	(InstEncoding){unsupportedInstruction,	"pop",		3,	COND_ONLY};
+	encodings[27] =	(InstEncoding){unsupportedInstruction,	"push",		4,	COND_ONLY};
+	encodings[28] =	(InstEncoding){unsupportedInstruction,	"ror",		3,	COND_ONLY};
+	encodings[29] =	(InstEncoding){unsupportedInstruction,	"rrx",		3,	COND_ONLY};
+	encodings[30] =	(InstEncoding){unsupportedInstruction,	"rsb",		3,	SET_FLAGS};
+	encodings[31] =	(InstEncoding){unsupportedInstruction,	"rsc",		3,	SET_FLAGS};
+	encodings[32] =	(InstEncoding){unsupportedInstruction,	"sbc",		3,	SET_FLAGS};
+	encodings[33] =	(InstEncoding){unsupportedInstruction,	"smlal",	5,	SET_FLAGS};
+	encodings[34] =	(InstEncoding){unsupportedInstruction,	"smull",	5,	SET_FLAGS};
+	encodings[35] =	(InstEncoding){unsupportedInstruction,	"stm",		3,	ADDRESSING_MODE};
+	encodings[36] =	(InstEncoding){unsupportedInstruction,	"str",		3,	DATA_SIZE};
+	encodings[37] =	(InstEncoding){unsupportedInstruction,	"sub",		3,	SET_FLAGS};
+	encodings[38] =	(InstEncoding){unsupportedInstruction,	"swi",		3,	COND_ONLY};
+	encodings[39] =	(InstEncoding){unsupportedInstruction,	"swp",		3,	COND_ONLY};
+	encodings[40] =	(InstEncoding){unsupportedInstruction,	"teq",		3,	COND_ONLY};
+	encodings[41] =	(InstEncoding){unsupportedInstruction,	"tst",		3,	COND_ONLY};
+	encodings[42] =	(InstEncoding){unsupportedInstruction,	"und",		3,	COND_ONLY};
+	encodings[43] =	(InstEncoding){unsupportedInstruction,	"umlal",	5,	SET_FLAGS};
+	encodings[44] =	(InstEncoding){unsupportedInstruction,	"umull",	5,	SET_FLAGS};
 
 	return encodings;
 }
@@ -602,7 +611,7 @@ int main(int argc, char **argv) {
 	printf("---\nLine:\tType:\n");
 
 	for (int i = 0; i <= line_num; i++) {
-		printf("%lu:\t%d:\t", lines[i].line_num, lines[i].type);
+		printf("\n%lu:\t%d:\t", lines[i].line_num, lines[i].type);
 
 		switch (lines[i].type) {
 			case CODE:
@@ -628,27 +637,17 @@ int main(int argc, char **argv) {
 					int last_encode_success = -1;
 					int mi = 0;
 					for (; encode_i < ENCODINGS_COUNT && mnemonic_start[mi] != ' ' && mnemonic_start[mi] != '\t' && mnemonic_start[mi] != '\n' && mnemonic_start[mi] != ';'; mi++) {
-						//printf("INSTRUCTIONCHAR'%c'", getLowerChar(mnemonic_start[mi]));
-
 						while (encode_i < ENCODINGS_COUNT && encodings[encode_i].mnemonic[mi] != getLowerChar(mnemonic_start[mi])) {
 							encode_i++;
 
 							while (encode_i < ENCODINGS_COUNT && mi >= encodings[encode_i].mnemonic_length)
 								encode_i++;
-
-							//if (encode_i < ENCODINGS_COUNT) {
-							//	printf("CT'%c'", encodings[encode_i].mnemonic[mi]);
-							//	fflush(stdout);
-							//} else {
-							//	printf("REACHEDEND");
-							//}
 						}
 
 						if (encode_i < ENCODINGS_COUNT) {
 
 							bool correct_prev = true;
 							for (int check_c = 0; check_c <= mi && check_c < encodings[encode_i].mnemonic_length; check_c++) {
-								//printf("COMPARE'%c'TO'%c'\n", encodings[encode_i].mnemonic[check_c], getLowerChar(mnemonic_start[check_c]));
 								if (encodings[encode_i].mnemonic[check_c] != getLowerChar(mnemonic_start[check_c]))
 									correct_prev = false;
 							}
@@ -659,8 +658,8 @@ int main(int argc, char **argv) {
 						}
 					}
 
+					bool starts_with_last_success = true;
 					if (encode_i == ENCODINGS_COUNT || mi != encodings[encode_i].mnemonic_length) {
-						bool starts_with_last_success = true;
 						if (last_encode_success != -1 && mi > encodings[last_encode_success].mnemonic_length) {
 							for (int check_c = 0; check_c < encodings[last_encode_success].mnemonic_length; check_c++) {
 								if (encodings[last_encode_success].mnemonic[check_c] != getLowerChar(mnemonic_start[check_c]))
@@ -675,20 +674,92 @@ int main(int argc, char **argv) {
 						} else {
 							printf("Unknown instruction: ");
 							lineIssue(&lines[i]);
-
-							continue;
 						}
 					}
 
-					// FIXME: right now, not all instructions read properly, like `blt`, which will read as `bl` + `t`, not `b` + `lt`
-					printf("Probable mnemonic #%d (%s) on line %lu\n", last_encode_success, encodings[last_encode_success].mnemonic, lines[i].line_num);
+					if (starts_with_last_success && encodings[last_encode_success].suffix != NOP) {
+						InstEncoding *success_encoding = &(encodings[last_encode_success]);
 
-					enum InstructionCondition cond = getInstCond(mnemonic_start + encodings[last_encode_success].mnemonic_length); // TODO: when AL comes through, need to check to make sure it is proper.
-					printf("Probable instruction condition: 0x%x\n", cond);
+						// FIXME: right now, not all instructions read properly, like `blt`, which will read as `bl` + `t`, not `b` + `lt`
+						printf("Probable mnemonic #%d (%s)\n", last_encode_success, success_encoding->mnemonic);
+						// TODO: encode as much of the mnemonic as we can at this stage, later, we'll read the rest of the instruction to determine other values we can OR in.
 
-					encoding |= cond << 28;
+						enum InstructionCondition cond = getInstCond(mnemonic_start + success_encoding->mnemonic_length); // TODO: when AL comes through, need to check to make sure it is proper.
+						printf("Probable instruction condition: 0x%x\n", cond);
 
-					// TODO: read extra info on mnemonic like add{s}, ldr{h}, ldm{fd}, etc. We need to be careful of when there are conditions too (e.g. `ldreqh`). Might be easiest to find the end and grab backwards.
+						encoding |= cond << 28;
+
+						//printf("MI=%d->'%c'", mi, mnemonic_start[mi]);
+						for (; mnemonic_start[mi] != ' ' && mnemonic_start[mi] != '\t' && mnemonic_start[mi] != '\n'; mi++);
+						if (mnemonic_start + mi > asm_buffer_start + 2) {
+							char last_two[] = {getLowerChar(mnemonic_start[mi - 2]), getLowerChar(mnemonic_start[mi - 1])};
+
+							switch (success_encoding->suffix) {
+								case SET_FLAGS:
+									printf("Instruction detected to set flags\n");
+
+									encoding |= (last_two[1] == 's') << 20;
+
+									break;
+								case DATA_SIZE:
+									printf("Instruction detected with data size ");
+
+									switch (last_two[1]) {
+										case 'b':
+											if (last_two[0] == 's') {
+												printf("sb");
+
+												encoding = (encoding & 0xF1FFFF9F) | (0xD << 4);
+											} else {
+												printf("b");
+
+												encoding = (encoding & 0xF7FFFFFF) | (1 << 26) | (1 << 22);
+											}
+
+											break;
+										case 't':
+											if (last_two[0] == 'b') {
+												printf("bt");
+
+												encoding = (encoding & 0xF6FFFFFF) | (1 << 26) | (0x3 << 21);
+											} else {
+												printf("t");
+
+												encoding = (encoding & 0xF6BFFFFF) | (1 << 26) | (1 << 21);
+											}
+
+											break;
+										case 'h':
+											encoding &= encoding & 0xF1FFFF9F;
+											if (last_two[0] == 's') {
+												printf("sh");
+
+												encoding |= 0xF << 4;
+											} else {
+												printf("h");
+
+												encoding |= 0xB << 4;
+											}
+
+											break;
+									}
+
+									printf("\n");
+
+									break;
+								case ADDRESSING_MODE:
+									//TODO
+									break;
+							}
+						}
+						// TODO: we might want to say somewhere that this assembler will only accept divided syntax for ARM assembly rather than unified syntax / UAL, but then we would have to change it to make sure that all immediate values are required to start with '#'
+					} else {
+						if (starts_with_last_success) {
+							printf("Probable nop\n");
+						}
+
+						encoding = 0x00000000;
+					}
 				}
 
 				rom[rom_offset] = (uint8_t)encoding;
