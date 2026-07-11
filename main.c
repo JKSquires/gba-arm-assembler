@@ -279,8 +279,9 @@ enum InstructionCondition getInstCond(char *cond_start) {
 	char cond[2];
 	cond[0] = getLowerChar(cond_start[0]);
 	if (cond[0] < 'a' || cond[0] > 'z') return AL;
-	char second = getLowerChar(cond_start[1]);
+	cond[1] = getLowerChar(cond_start[1]);
 	if (cond[1] < 'a' || cond[1] > 'z') return AL;
+
 
 	if (cond[0] == 'e' && cond[1] == 'q') return EQ;
 	else if (cond[0] == 'n' && cond[1] == 'e') return NE;
@@ -582,14 +583,6 @@ int main(int argc, char **argv) {
 	for (int i = 0; i <= line_num; i++) {
 		printf("%lu:\t%d:\t", lines[i].line_num, lines[i].type);
 
-		/*
-		for (char *c = lines[i].start; *c != '\n' && *c != ';'; c++) {
-			// TODO: start processing lines: need to process byte define directives, and create instruction encodings for each instruction line, ... more most certainly
-			printf("%c", *c);
-		}
-		printf("\n");
-		*/
-
 		switch (lines[i].type) {
 			case CODE:
 				Inst *inst = (Inst *)(lines[i].data);
@@ -611,7 +604,7 @@ int main(int argc, char **argv) {
 				if (inst->block_count >= 1) {
 					char *mnemonic_start = inst->blocks[0].start;
 					int encode_i = 0;
-					int last_encode_success = 0;
+					int last_encode_success = -1;
 					int mi = 0;
 					for (; encode_i < ENCODINGS_COUNT && mnemonic_start[mi] != ' ' && mnemonic_start[mi] != '\t' && mnemonic_start[mi] != '\n' && mnemonic_start[mi] != ';'; mi++) {
 						//printf("INSTRUCTIONCHAR'%c'", getLowerChar(mnemonic_start[mi]));
@@ -630,21 +623,24 @@ int main(int argc, char **argv) {
 							//}
 						}
 
-						bool correct_prev = true;
-						/* // FIXME
-						for (int check_c = 0; check_c <= mi && check_c < encodings[encode_i].mnemonic_length; check_c++) {
-							if (encodings[encode_i].mnemonic[mi] != getLowerChar(mnemonic_start[mi]))
-								correct_prev = false;
-						}
-						*/
-						if (encode_i < ENCODINGS_COUNT && correct_prev) {
-							last_encode_success = encode_i;
+						if (encode_i < ENCODINGS_COUNT) {
+
+							bool correct_prev = true;
+							for (int check_c = 0; check_c <= mi && check_c < encodings[encode_i].mnemonic_length; check_c++) {
+								//printf("COMPARE'%c'TO'%c'\n", encodings[encode_i].mnemonic[check_c], getLowerChar(mnemonic_start[check_c]));
+								if (encodings[encode_i].mnemonic[check_c] != getLowerChar(mnemonic_start[check_c]))
+									correct_prev = false;
+							}
+
+							if (correct_prev) {
+								last_encode_success = encode_i;
+							}
 						}
 					}
 
 					if (encode_i == ENCODINGS_COUNT || mi != encodings[encode_i].mnemonic_length) {
 						bool starts_with_last_success = true;
-						if (mi > encodings[last_encode_success].mnemonic_length) {
+						if (last_encode_success != -1 && mi > encodings[last_encode_success].mnemonic_length) {
 							for (int check_c = 0; check_c < encodings[last_encode_success].mnemonic_length; check_c++) {
 								if (encodings[last_encode_success].mnemonic[check_c] != getLowerChar(mnemonic_start[check_c]))
 									starts_with_last_success = false;
@@ -663,7 +659,15 @@ int main(int argc, char **argv) {
 						}
 					}
 
-					printf("Mnemonic #%d on line %lu\n", encode_i, lines[i].line_num);
+					// FIXME: right now, not all instructions read properly, like `blt`, which will read as `bl` + `t`, not `b` + `lt`
+					printf("Probable mnemonic #%d (%s) on line %lu\n", last_encode_success, encodings[last_encode_success].mnemonic, lines[i].line_num);
+
+					enum InstructionCondition cond = getInstCond(mnemonic_start + encodings[last_encode_success].mnemonic_length);
+					printf("Probable instruction condition: 0x%x\n", cond);
+
+					encoding |= cond << 28;
+
+					// TODO: read extra info on mnemonic like add{s}, ldr{h}, ldm{fd}, etc.
 				}
 
 				rom[rom_offset] = (uint8_t)encoding;

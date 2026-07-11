@@ -11,7 +11,7 @@ I just know that I'm going to look back at this code in the future and think, "w
 Requires pthread.
 
 ```sh
-gcc -fshort-enums main.c -pthread -o gbaaa
+gcc -fshort-enums main.c -pthread -o gbaaa -s
 ```
 
 ---
