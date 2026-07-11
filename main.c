@@ -95,6 +95,7 @@ struct InstructionBlock {
 struct InstructionEncoding {
 	uint32_t (*encode)(Inst *instruction);
 	char *mnemonic;
+	uint8_t mnemonic_length;
 };
 
 /*
@@ -131,6 +132,27 @@ char getLowerChar(char c) {
 
 char *skipWhitespace(char *c) {
 	for (; *c == ' ' || *c == '\t'; c++);
+
+	return c;
+}
+
+char *skipEmptyLines(char *c, char *buffer_end, unsigned long *file_line_num) {
+	if (c < buffer_end) {
+		char *next_start = skipWhitespace(c + (*c == '\n'));
+		while (*next_start == '\n' || *next_start == ';') {
+			//printf("\nLine %lu found empty\n", *file_line_num);
+			if (next_start >= buffer_end) {
+				c = next_start;
+				break;
+			} else {
+				for (c = next_start; *c != '\n'; c++);
+
+				(*file_line_num)++;
+
+				next_start = skipWhitespace(c + 1);
+			}
+		}
+	}
 
 	return c;
 }
@@ -204,53 +226,77 @@ InstEncoding *createEncodings() {
 	InstEncoding *encodings = malloc(ENCODINGS_COUNT * sizeof *encodings);
 
 	// maybe instead of one function for each, find patterns like (Rd, Rn, <Oprnd2>), (imm24), (Rt, [Rn, +/- Rm{, <shift>}]{!}), etc. and make functions for those?
-	encodings[0] = (InstEncoding){unsupportedInstruction, "adc"};
-	encodings[1] = (InstEncoding){unsupportedInstruction, "add"};
-	encodings[2] = (InstEncoding){unsupportedInstruction, "adr"};
-	encodings[3] = (InstEncoding){unsupportedInstruction, "addr"};
-	encodings[4] = (InstEncoding){unsupportedInstruction, "adrl"};
-	encodings[5] = (InstEncoding){unsupportedInstruction, "and"};
-	encodings[6] = (InstEncoding){unsupportedInstruction, "asr"};
-	encodings[7] = (InstEncoding){unsupportedInstruction, "b"};
-	encodings[8] = (InstEncoding){unsupportedInstruction, "bic"};
-	encodings[9] = (InstEncoding){unsupportedInstruction, "bl"};
-	encodings[10] = (InstEncoding){unsupportedInstruction, "bx"};
-	encodings[11] = (InstEncoding){unsupportedInstruction, "cmn"};
-	encodings[12] = (InstEncoding){unsupportedInstruction, "cmp"};
-	encodings[13] = (InstEncoding){unsupportedInstruction, "eor"};
-	encodings[14] = (InstEncoding){unsupportedInstruction, "ldm"};
-	encodings[15] = (InstEncoding){unsupportedInstruction, "ldr"};
-	encodings[16] = (InstEncoding){unsupportedInstruction, "lsl"};
-	encodings[17] = (InstEncoding){unsupportedInstruction, "mla"};
-	encodings[18] = (InstEncoding){unsupportedInstruction, "mov"};
-	encodings[19] = (InstEncoding){unsupportedInstruction, "mrs"};
-	encodings[20] = (InstEncoding){unsupportedInstruction, "msr"};
-	encodings[21] = (InstEncoding){unsupportedInstruction, "mul"};
-	encodings[22] = (InstEncoding){unsupportedInstruction, "mvn"};
-	encodings[23] = (InstEncoding){unsupportedInstruction, "neg"};
-	encodings[24] = (InstEncoding){unsupportedInstruction, "nop"};
-	encodings[25] = (InstEncoding){unsupportedInstruction, "orr"};
-	encodings[26] = (InstEncoding){unsupportedInstruction, "pop"};
-	encodings[27] = (InstEncoding){unsupportedInstruction, "push"};
-	encodings[28] = (InstEncoding){unsupportedInstruction, "ror"};
-	encodings[29] = (InstEncoding){unsupportedInstruction, "rrx"};
-	encodings[30] = (InstEncoding){unsupportedInstruction, "rsb"};
-	encodings[31] = (InstEncoding){unsupportedInstruction, "rsc"};
-	encodings[32] = (InstEncoding){unsupportedInstruction, "sbc"};
-	encodings[33] = (InstEncoding){unsupportedInstruction, "smlal"};
-	encodings[34] = (InstEncoding){unsupportedInstruction, "smull"};
-	encodings[35] = (InstEncoding){unsupportedInstruction, "stm"};
-	encodings[36] = (InstEncoding){unsupportedInstruction, "str"};
-	encodings[37] = (InstEncoding){unsupportedInstruction, "sub"};
-	encodings[38] = (InstEncoding){unsupportedInstruction, "swi"};
-	encodings[39] = (InstEncoding){unsupportedInstruction, "swp"};
-	encodings[40] = (InstEncoding){unsupportedInstruction, "teq"};
-	encodings[41] = (InstEncoding){unsupportedInstruction, "tst"};
-	encodings[42] = (InstEncoding){unsupportedInstruction, "und"};
-	encodings[43] = (InstEncoding){unsupportedInstruction, "umlal"};
-	encodings[44] = (InstEncoding){unsupportedInstruction, "umull"};
+	encodings[0] = (InstEncoding){unsupportedInstruction, "adc", 3};
+	encodings[1] = (InstEncoding){unsupportedInstruction, "add", 3};
+	encodings[2] = (InstEncoding){unsupportedInstruction, "addr", 4};
+	encodings[3] = (InstEncoding){unsupportedInstruction, "adr", 3};
+	encodings[4] = (InstEncoding){unsupportedInstruction, "adrl", 4};
+	encodings[5] = (InstEncoding){unsupportedInstruction, "and", 3};
+	encodings[6] = (InstEncoding){unsupportedInstruction, "asr", 3};
+	encodings[7] = (InstEncoding){unsupportedInstruction, "b", 1};
+	encodings[8] = (InstEncoding){unsupportedInstruction, "bic", 3};
+	encodings[9] = (InstEncoding){unsupportedInstruction, "bl", 2};
+	encodings[10] = (InstEncoding){unsupportedInstruction, "bx", 2};
+	encodings[11] = (InstEncoding){unsupportedInstruction, "cmn", 3};
+	encodings[12] = (InstEncoding){unsupportedInstruction, "cmp", 3};
+	encodings[13] = (InstEncoding){unsupportedInstruction, "eor", 3};
+	encodings[14] = (InstEncoding){unsupportedInstruction, "ldm", 3};
+	encodings[15] = (InstEncoding){unsupportedInstruction, "ldr", 3};
+	encodings[16] = (InstEncoding){unsupportedInstruction, "lsl", 3};
+	encodings[17] = (InstEncoding){unsupportedInstruction, "mla", 3};
+	encodings[18] = (InstEncoding){unsupportedInstruction, "mov", 3};
+	encodings[19] = (InstEncoding){unsupportedInstruction, "mrs", 3};
+	encodings[20] = (InstEncoding){unsupportedInstruction, "msr", 3};
+	encodings[21] = (InstEncoding){unsupportedInstruction, "mul", 3};
+	encodings[22] = (InstEncoding){unsupportedInstruction, "mvn", 3};
+	encodings[23] = (InstEncoding){unsupportedInstruction, "neg", 3};
+	encodings[24] = (InstEncoding){unsupportedInstruction, "nop", 3};
+	encodings[25] = (InstEncoding){unsupportedInstruction, "orr", 3};
+	encodings[26] = (InstEncoding){unsupportedInstruction, "pop", 3};
+	encodings[27] = (InstEncoding){unsupportedInstruction, "push", 4};
+	encodings[28] = (InstEncoding){unsupportedInstruction, "ror", 3};
+	encodings[29] = (InstEncoding){unsupportedInstruction, "rrx", 3};
+	encodings[30] = (InstEncoding){unsupportedInstruction, "rsb", 3};
+	encodings[31] = (InstEncoding){unsupportedInstruction, "rsc", 3};
+	encodings[32] = (InstEncoding){unsupportedInstruction, "sbc", 3};
+	encodings[33] = (InstEncoding){unsupportedInstruction, "smlal", 5};
+	encodings[34] = (InstEncoding){unsupportedInstruction, "smull", 5};
+	encodings[35] = (InstEncoding){unsupportedInstruction, "stm", 3};
+	encodings[36] = (InstEncoding){unsupportedInstruction, "str", 3};
+	encodings[37] = (InstEncoding){unsupportedInstruction, "sub", 3};
+	encodings[38] = (InstEncoding){unsupportedInstruction, "swi", 3};
+	encodings[39] = (InstEncoding){unsupportedInstruction, "swp", 3};
+	encodings[40] = (InstEncoding){unsupportedInstruction, "teq", 3};
+	encodings[41] = (InstEncoding){unsupportedInstruction, "tst", 3};
+	encodings[42] = (InstEncoding){unsupportedInstruction, "und", 3};
+	encodings[43] = (InstEncoding){unsupportedInstruction, "umlal", 5};
+	encodings[44] = (InstEncoding){unsupportedInstruction, "umull", 5};
 
 	return encodings;
+}
+
+enum InstructionCondition getInstCond(char *cond_start) {
+	char cond[2];
+	cond[0] = getLowerChar(cond_start[0]);
+	if (cond[0] < 'a' || cond[0] > 'z') return AL;
+	char second = getLowerChar(cond_start[1]);
+	if (cond[1] < 'a' || cond[1] > 'z') return AL;
+
+	if (cond[0] == 'e' && cond[1] == 'q') return EQ;
+	else if (cond[0] == 'n' && cond[1] == 'e') return NE;
+	else if (cond[0] == 'c' && cond[1] == 's') return CS;
+	else if (cond[0] == 'c' && cond[1] == 'c') return CC;
+	else if (cond[0] == 'm' && cond[1] == 'i') return MI;
+	else if (cond[0] == 'p' && cond[1] == 'l') return PL;
+	else if (cond[0] == 'v' && cond[1] == 's') return VS;
+	else if (cond[0] == 'v' && cond[1] == 'c') return VC;
+	else if (cond[0] == 'h' && cond[1] == 'i') return HI;
+	else if (cond[0] == 'l' && cond[1] == 's') return LS;
+	else if (cond[0] == 'g' && cond[1] == 'e') return GE;
+	else if (cond[0] == 'l' && cond[1] == 't') return LT;
+	else if (cond[0] == 'g' && cond[1] == 't') return GT;
+	else if (cond[0] == 'l' && cond[1] == 'e') return LE;
+	else return AL;
 }
 
 
@@ -300,11 +346,16 @@ int main(int argc, char **argv) {
 	int count_blocks = 1;
 	struct InstructionBlock blocks[MAX_INSTRUCTION_BLOCKS];
 
-	lines[0] = (struct Line){asm_buffer, NULL, 0, CODE};
-	blocks[0] = (struct InstructionBlock){asm_buffer, FIRST};
-
 	char *asm_buffer_end = asm_buffer + asm_size;
-	for (char *c = asm_buffer; c <= asm_buffer_end; c++) {
+	char *asm_buffer_start = skipEmptyLines(asm_buffer, asm_buffer_end, &file_line_num);
+	if ((*asm_buffer_start == '\n' || *asm_buffer_start == ';') && asm_buffer_start < asm_buffer_end) {
+		asm_buffer_start = skipWhitespace(asm_buffer_start + 1);
+	}
+
+	lines[0] = (struct Line){asm_buffer_start, NULL, file_line_num, CODE};
+	blocks[0] = (struct InstructionBlock){asm_buffer_start, FIRST};
+
+	for (char *c = asm_buffer_start; c <= asm_buffer_end; c++) {
 		if (*c == '\n') {
 			comment = false;
 			if (track_operand_state != REGULAR) {
@@ -325,23 +376,10 @@ int main(int argc, char **argv) {
 				lines[line_num].data = (void *)inst;
 
 				track_rom_size += 4;
-				printf("\nROM size: %lu bytes\n", (unsigned long)track_rom_size);
+				//printf("\nROM size: %lu bytes\n", (unsigned long)track_rom_size);
 			}
 
-			char *next_start = skipWhitespace(c + 1);
-			while (*next_start == '\n' || *next_start == ';') {
-				printf("\nLine %lu found empty\n", file_line_num);
-				if (next_start == asm_buffer_end) {
-					c = next_start;
-					break;
-				} else {
-					for (c = next_start; *c != '\n'; c++);
-
-					file_line_num++;
-
-					next_start = skipWhitespace(c + 1);
-				}
-			}
+			c = skipEmptyLines(c, asm_buffer_end, &file_line_num);
 
 			if (c != asm_buffer_end) {
 				if (++line_num + 1 == lines_arr_size) {
@@ -349,9 +387,9 @@ int main(int argc, char **argv) {
 					lines = realloc(lines, lines_arr_size * sizeof *lines);
 				}
 
-				c = next_start - 1;
+				c = skipWhitespace(c + 1) - 1;
 				lines[line_num] = (struct Line){c + 1, NULL, file_line_num, CODE};
-				printf("\nWrite line %lu starting with '%c'\n", file_line_num, *(c + 1));
+				//printf("\nWrite line %lu starting with '%c'\n", file_line_num, *(c + 1));
 
 				blocks[0] = (struct InstructionBlock){c + 1, FIRST};
 				count_blocks = 1;
@@ -361,7 +399,7 @@ int main(int argc, char **argv) {
 		}
 
 		if (!comment) {
-			printf("<%c>", *c); // TODO: remove debug line
+			//printf("<%c>", *c); // TODO: remove debug line
 
 			switch (*c) {
 				case '@':
@@ -568,7 +606,66 @@ int main(int argc, char **argv) {
 				}
 				printf("\n");
 
-				uint32_t encoding = 0xCCCCCCCC; // TODO: encode CODE lines and write into the ROM buffer
+				uint32_t encoding = 0x00000000; // TODO: encode CODE lines and write into the ROM buffer
+
+				if (inst->block_count >= 1) {
+					char *mnemonic_start = inst->blocks[0].start;
+					int encode_i = 0;
+					int last_encode_success = 0;
+					int mi = 0;
+					for (; encode_i < ENCODINGS_COUNT && mnemonic_start[mi] != ' ' && mnemonic_start[mi] != '\t' && mnemonic_start[mi] != '\n' && mnemonic_start[mi] != ';'; mi++) {
+						//printf("INSTRUCTIONCHAR'%c'", getLowerChar(mnemonic_start[mi]));
+
+						while (encode_i < ENCODINGS_COUNT && encodings[encode_i].mnemonic[mi] != getLowerChar(mnemonic_start[mi])) {
+							encode_i++;
+
+							while (encode_i < ENCODINGS_COUNT && mi >= encodings[encode_i].mnemonic_length)
+								encode_i++;
+
+							//if (encode_i < ENCODINGS_COUNT) {
+							//	printf("CT'%c'", encodings[encode_i].mnemonic[mi]);
+							//	fflush(stdout);
+							//} else {
+							//	printf("REACHEDEND");
+							//}
+						}
+
+						bool correct_prev = true;
+						/* // FIXME
+						for (int check_c = 0; check_c <= mi && check_c < encodings[encode_i].mnemonic_length; check_c++) {
+							if (encodings[encode_i].mnemonic[mi] != getLowerChar(mnemonic_start[mi]))
+								correct_prev = false;
+						}
+						*/
+						if (encode_i < ENCODINGS_COUNT && correct_prev) {
+							last_encode_success = encode_i;
+						}
+					}
+
+					if (encode_i == ENCODINGS_COUNT || mi != encodings[encode_i].mnemonic_length) {
+						bool starts_with_last_success = true;
+						if (mi > encodings[last_encode_success].mnemonic_length) {
+							for (int check_c = 0; check_c < encodings[last_encode_success].mnemonic_length; check_c++) {
+								if (encodings[last_encode_success].mnemonic[check_c] != getLowerChar(mnemonic_start[check_c]))
+									starts_with_last_success = false;
+							}
+						} else {
+							starts_with_last_success = false;
+						}
+
+						if (starts_with_last_success) {
+							printf("Last encoding success at #%d\n", last_encode_success);
+						} else {
+							printf("Unknown instruction: ");
+							lineIssue(&lines[i]);
+
+							continue;
+						}
+					}
+
+					printf("Mnemonic #%d on line %lu\n", encode_i, lines[i].line_num);
+				}
+
 				rom[rom_offset] = (uint8_t)encoding;
 				rom[rom_offset + 1] = (uint8_t)(encoding >> 8);
 				rom[rom_offset + 2] = (uint8_t)(encoding >> 16);
