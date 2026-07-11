@@ -429,7 +429,8 @@ int main(int argc, char **argv) {
 								printf("\nAlign bytes directive is unsupported right now\n"); // TODO: Implement; maybe something like `@a <num; e.g. 4 or 2>`
 								lines[line_num].type = DIR_A;
 
-								c += 0; // TODO: calculate what is needed to align.
+								c += 0; // TODO: count
+								// TODO: calculate what is needed to align.
 							}
 
 							break;
@@ -447,7 +448,7 @@ int main(int argc, char **argv) {
 								printf("\nText directive is unsupported right now\n"); // TODO: Implement; maybe something like `@t "<text>"`
 								lines[line_num].type = DIR_T;
 
-								c += 0; // TODO: count characters
+								c += 0; // TODO: count characters for c and track_rom_size
 							}
 
 							break;
