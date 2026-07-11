@@ -19,7 +19,9 @@ enum LineType {
 	LABEL,
 	END,
 	DIR_UNK,
-	DIR_INC
+	DIR_A,
+	DIR_I,
+	DIR_T,
 };
 
 enum InstructionCondition {
@@ -37,7 +39,7 @@ enum InstructionCondition {
 	LT = 11,
 	GT = 12,
 	LE = 13,
-	AL = 14
+	AL = 14,
 };
 
 // maybe for operands, we can create a struct that stores type (register, immediate, label reference, memory operand, bit-shift, etc.) and data (union the different ones?)
@@ -59,19 +61,19 @@ enum BlockType {
 	MEM_LBL,
 	MEM_SHIFT_REG,
 	MEM_SHIFT_IMM,
-	MUL_REG
+	MUL_REG,
 };
 
 enum OperandState {
 	REGULAR,
 	MEMORY,
-	MULTIPLE
+	MULTIPLE,
 };
 
 enum NumType {
 	BIN,
 	DEC,
-	HEX
+	HEX,
 };
 
 
@@ -405,15 +407,6 @@ int main(int argc, char **argv) {
 			switch (*c) {
 				case '@':
 					switch (getLowerChar(*(c + 1))) {
-						case 'i':
-							if (getLowerChar(*(c + 2)) == 'n'
-								&& getLowerChar(*(c + 3)) == 'c'
-								&& getLowerChar(*(c + 4)) == ' ') {
-								printf("\nInclude directive is unsupported right now\n");
-								lines[line_num].type = DIR_INC;
-
-								c += 4;
-							}
 						case 'b': // fall through
 						case 'h': // fall through
 						case 'w':
@@ -430,6 +423,33 @@ int main(int argc, char **argv) {
 								}
 								c--;
 							}
+							break;
+						case 'a':
+							if (*(c + 2) == ' ') {
+								printf("\nAlign bytes directive is unsupported right now\n"); // TODO: Implement; maybe something like `@a <num; e.g. 4 or 2>`
+								lines[line_num].type = DIR_A;
+
+								c += 0; // TODO: calculate what is needed to align.
+							}
+
+							break;
+						case 'i':
+							if (*(c + 2) == ' ') {
+								printf("\nInclude directive is unsupported right now\n"); // TODO: Implement; maybe something like `@i "<file name>"`
+								lines[line_num].type = DIR_I;
+
+								c += 4;
+							}
+
+							break;
+						case 't':
+							if (*(c + 2) == ' ') {
+								printf("\nText directive is unsupported right now\n"); // TODO: Implement; maybe something like `@t "<text>"`
+								lines[line_num].type = DIR_T;
+
+								c += 0; // TODO: count characters
+							}
+
 							break;
 						default:
 							lines[line_num].type = DIR_UNK;
@@ -576,7 +596,7 @@ int main(int argc, char **argv) {
 	unsigned char *rom = calloc(track_rom_size, 1);
 	unsigned long rom_offset = 0;
 
-	printf("DIR_B = %d, DIR_H = %d, DIR_W = %d, CODE = %d, LABEL = %d, END = %d, DIR_UNK = %d, DIR_INC = %d\n", DIR_B, DIR_H, DIR_W, CODE, LABEL, END, DIR_UNK, DIR_INC);
+	printf("DIR_B = %d, DIR_H = %d, DIR_W = %d, CODE = %d, LABEL = %d, END = %d, DIR_UNK = %d, DIR_A = %d, DIR_I = %d, DIR_T = %d\n", DIR_B, DIR_H, DIR_W, CODE, LABEL, END, DIR_UNK, DIR_A, DIR_I, DIR_T);
 	printf("UNKNOWN_BLOCK = %d, FIRST = %d, REG = %d, IMM = %d, LBL = %d, SHIFT_REG = %d, SHIFT_IMM = %d, MEM_REG = %d, MEM_IMM = %d, MEM_LBL = %d, MEM_SHIFT_REG = %d, MEM_SHIFT_IMM = %d, MUL_REG = %d\n", UNKNOWN_BLOCK, FIRST, REG, IMM, LBL, SHIFT_REG, SHIFT_IMM, MEM_REG, MEM_IMM, MEM_LBL, MEM_SHIFT_REG, MEM_SHIFT_IMM, MUL_REG);
 	printf("---\nLine:\tType:\n");
 
