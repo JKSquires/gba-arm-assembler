@@ -441,7 +441,6 @@ int main(int argc, char **argv) {
 								c += 0; // TODO: count
 								// TODO: calculate what is needed to align.
 							}
-
 							break;
 						case 'i':
 							if (*(c + 2) == ' ') {
@@ -450,7 +449,6 @@ int main(int argc, char **argv) {
 
 								c += 4;
 							}
-
 							break;
 						case 't':
 							if (*(c + 2) == ' ') {
@@ -459,7 +457,6 @@ int main(int argc, char **argv) {
 
 								c += 0; // TODO: count characters for c and track_rom_size
 							}
-
 							break;
 						default:
 							lines[line_num].type = DIR_UNK;
@@ -487,7 +484,6 @@ int main(int argc, char **argv) {
 						if (dup_char == label_length) {
 							is_dup = true;
 							printf("Duplicate label on line %lu\n", file_line_num);
-
 							break;
 						}
 					}
@@ -557,13 +553,11 @@ int main(int argc, char **argv) {
 							case '#': // fall through
 							case '%':
 								blocks[count_blocks - 1].type = track_operand_state == REGULAR ? IMM : MEM_IMM;
-								
 								break;
 							case 'r':
 								if (*(c + 1) >= '0' && *(c + 1) <= '9') {
 									blocks[count_blocks - 1].type = track_operand_state == REGULAR ? REG : MEM_REG;
 								}
-
 								break;
 							default:
 								blocks[count_blocks - 1].type = LBL;
@@ -701,54 +695,110 @@ int main(int argc, char **argv) {
 									encoding |= (last_two[1] == 's') << 20;
 
 									break;
-								case DATA_SIZE:
+								case DATA_SIZE: // FIXME: when encoding ldr and sdr in previous section, note that ldr has bit 20 set and str has bit 20 cleared. this means that we should probably not mask that bit in this section--review
+									// TODO: bits 21, 23, and 24 will need to be set later accordingly
 									printf("Instruction detected with data size ");
 
 									switch (last_two[1]) {
 										case 'b':
-											if (last_two[0] == 's') {
+											if (last_two[0] == 's') { // ___sb
 												printf("sb");
 
 												encoding = (encoding & 0xF1FFFF9F) | (0xD << 4);
-											} else {
+											} else { // ___b
 												printf("b");
 
 												encoding = (encoding & 0xF7FFFFFF) | (1 << 26) | (1 << 22);
 											}
-
 											break;
 										case 't':
-											if (last_two[0] == 'b') {
+											if (last_two[0] == 'b') { // ___bt
 												printf("bt");
 
 												encoding = (encoding & 0xF6FFFFFF) | (1 << 26) | (0x3 << 21);
-											} else {
+											} else { // ___t
 												printf("t");
 
 												encoding = (encoding & 0xF6BFFFFF) | (1 << 26) | (1 << 21);
 											}
-
 											break;
 										case 'h':
 											encoding &= encoding & 0xF1FFFF9F;
-											if (last_two[0] == 's') {
+											if (last_two[0] == 's') { // ___sh
 												printf("sh");
 
 												encoding |= 0xF << 4;
-											} else {
+											} else { // ___h
 												printf("h");
 
 												encoding |= 0xB << 4;
 											}
-
 											break;
 									}
 
 									printf("\n");
 
 									break;
-								case ADDRESSING_MODE:
-									//TODO
+								case ADDRESSING_MODE: // FIXME: when encoding ldm and sdm in previous section, note that ldm has bit 20 set and stm has bit 20 cleared. this means that we should probably not mask that bit in this section--review
+									// TODO: bit 21 is wback, will need to set later if needed for the specific instruction based on operands
+									encoding = (encoding & 0xF02FFFFF) | (1 << 27);
+
+									switch (last_two[0]) {
+										case 'd':
+											if (last_two[1] == 'b') {
+												encoding |= 1 << 24;
+											}
+											break;
+										case 'i':
+											switch (last_two[1]) {
+												case 'a': // TODO: ldmia = ldm and stmia = stm; might want to just remove this
+													encoding |= 1 << 23;
+													break;
+												case 'b':
+													encoding |= 0x3 << 23;
+													break;
+											}
+											break;
+										default:
+											if (getLowerChar(*mnemonic_start) == 'l') { // ldm__
+												switch (last_two[0]) {
+													case 'e':
+														switch (last_two[1]) { // TODO: are we using too many switch-cases?
+															case 'a':
+																encoding |= 1 << 24;
+																break;
+															case 'd':
+																encoding |= 0x3 << 23;
+																break;
+														}
+														break;
+													case 'f':
+														if (last_two[1] == 'd') {
+															encoding |= 1 << 23; // TODO: ldmfd = ldm; might want to just remove this
+														}
+														break;
+												}
+											} else { // stm__
+												switch (last_two[0]) {
+													case 'e':
+														if (last_two[1] == 'a') {
+															encoding |= 1 << 23; // TODO: stmea = stm; might want to just remove this
+														}
+														break;
+													case 'f':
+														switch (last_two[1]) {
+															case 'a':
+																encoding |= 0x3 << 23;
+																break;
+															case 'd':
+																encoding |= 1 << 24;
+																break;
+														}
+														break;
+												}
+											}
+											break;
+									}
 									break;
 							}
 						}
@@ -758,7 +808,7 @@ int main(int argc, char **argv) {
 							printf("Probable nop\n");
 						}
 
-						encoding = 0x00000000;
+						encoding = 0x00000000; // TODO: We might not need this here because the default value is 0x00000000, but keeping this might be a good barrier for if anything touches encoding that isn't planned rn
 					}
 				}
 
@@ -793,7 +843,6 @@ int main(int argc, char **argv) {
 									} else {
 										val += 10 + (getLowerChar(*c) - 'a');
 									}
-
 									break;
 								case DEC:
 									val *= 10;
@@ -803,7 +852,6 @@ int main(int argc, char **argv) {
 										printf("Broken decimal literal: ");
 										lineIssue(&lines[i]);
 									}
-
 									break;
 								case BIN:
 									val <<= 1;
@@ -813,7 +861,6 @@ int main(int argc, char **argv) {
 										printf("Broken binary literal: ");
 										lineIssue(&lines[i]);
 									}
-
 									break;
 							}
 						}
@@ -823,13 +870,11 @@ int main(int argc, char **argv) {
 							case DIR_B:
 								rom[rom_offset] = (uint8_t)val;
 								rom_offset++;
-
 								break;
 							case DIR_H:
 								rom[rom_offset] = (uint8_t)val;
 								rom[rom_offset + 1] = (uint8_t)(val >> 8);
 								rom_offset += 2;
-
 								break;
 							case DIR_W:
 								rom[rom_offset] = (uint8_t)val;
@@ -837,7 +882,6 @@ int main(int argc, char **argv) {
 								rom[rom_offset + 2] = (uint8_t)(val >> 16);
 								rom[rom_offset + 3] = (uint8_t)(val >> 24);
 								rom_offset += 4;
-
 								break;
 						}
 					}
