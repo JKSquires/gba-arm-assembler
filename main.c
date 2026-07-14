@@ -5,6 +5,7 @@
 
 
 #define ENCODINGS_COUNT 45
+#define NOP_ENCODING_INDEX 24
 #define MAX_INSTRUCTION_BLOCKS 4 // FIXME: 4 is the max number of blocks a valid instruction can have excluding in multiple register operands/blocks (e.g. {r0, r3-r5, r10}). We need to figure out how we want to deal with those.
 
 
@@ -324,6 +325,9 @@ uint32_t mov(Inst *i) {
 	return encoding;
 }
 */
+uint32_t nop(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
+	return 0x00000000;
+}
 
 uint32_t unsupportedInstruction(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
 	printf("Unsupported instruction: ");
@@ -360,7 +364,7 @@ InstEncoding *createEncodings() {
 	encodings[21] =	(InstEncoding){unsupportedInstruction,	"mul",		3,	SET_FLAGS};
 	encodings[22] =	(InstEncoding){unsupportedInstruction,	"mvn",		3,	SET_FLAGS};
 	encodings[23] =	(InstEncoding){unsupportedInstruction,	"neg",		3,	COND_ONLY};
-	encodings[24] =	(InstEncoding){unsupportedInstruction,	"nop",		3,	NOP};
+	encodings[24] =	(InstEncoding){nop,						"nop",		3,	NOP};
 	encodings[25] =	(InstEncoding){unsupportedInstruction,	"orr",		3,	SET_FLAGS};
 	encodings[26] =	(InstEncoding){unsupportedInstruction,	"pop",		3,	COND_ONLY};
 	encodings[27] =	(InstEncoding){unsupportedInstruction,	"push",		4,	COND_ONLY};
@@ -763,7 +767,7 @@ int main(int argc, char **argv) {
 						if (starts_with_last_success) {
 							printf("Last encoding success at #%d\n", last_encode_success);
 						} else {
-							printf("Unknown instruction: ");
+							printf("Unrecognized instruction: ");
 							lineIssue(&lines[i]);
 						}
 					}
@@ -917,7 +921,7 @@ int main(int argc, char **argv) {
 							printf("Probable nop\n");
 						}
 
-						encoding = 0x00000000; // TODO: We might not need this here because the default value is 0x00000000, but keeping this might be a good barrier for if anything touches encoding that isn't planned rn
+						encoding = encodings[NOP_ENCODING_INDEX].encode(rom_offset, mnemonic_start, labels, label_tot, inst);
 					}
 				}
 

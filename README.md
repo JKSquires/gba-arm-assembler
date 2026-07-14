@@ -26,6 +26,10 @@ Branch and Exchange | `bx{<cond>} <Rm>` | `bx r14`
 
 ### Pseudo-Instructions
 
+Name | Instruction | Example Usage
+---- | ----------- | -------------
+No Operation | `nop` | `nop`
+
 ## Supported Assembler Directives
 
 Name | Directive | Example Usage
