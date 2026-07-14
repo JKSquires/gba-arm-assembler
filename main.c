@@ -188,7 +188,7 @@ unsigned long findLabel(char *inst_label, unsigned int inst_label_length, struct
 		if (matches) break;
 	}
 
-	return labels_i;
+	return labels_i; // error when labels_i == label_tot
 }
 
 void lineIssue(struct Line *line) {
@@ -204,8 +204,27 @@ void encodingIssue(Inst *i) { // FIXME: do we really need this anymore, maybe ju
 }
 
 uint8_t readReg(char *reg, Inst *i) {
-	// TODO: implement
-	return 0;
+	uint8_t data = 0;
+
+	if (*reg != 'r') {
+		printf("Issue reading register: ");
+		encodingIssue(i);
+
+		return 1 << 7; // error when &(1<<7)
+	}
+
+	char *c = reg + 1;
+	for (; *c >= '0' && *c <= '9'; c++) {
+		data = data * 10 + (*c - '0');
+	}
+	data &= 0xF;
+
+	if (*c == '!') {
+		data |= 1 << 4; // writeback register when &(1<<4)
+		c++;
+	}
+
+	return data; // register num is &0xF
 }
 
 uint32_t readConst(char *constant, Inst *i) {
@@ -221,7 +240,7 @@ uint16_t imm12(uint32_t val, Inst *i) {
 	}
 
 	if (r == 32) {
-		printf("Cannot create rotation for 12-bit immediate; ");
+		printf("Cannot create rotation for 12-bit immediate: ");
 		encodingIssue(i);
 	}
 
@@ -229,11 +248,13 @@ uint16_t imm12(uint32_t val, Inst *i) {
 }
 
 uint32_t imm24(uint32_t s, uint32_t d, Inst *i) {
-	int32_t val = (d - (s + 8)) / 4;
+	int32_t val = (d - (s + 8));
+	val /= 4;
 	uint32_t u_val = (uint32_t)val;
 
 	if (u_val > 0x00FFFFFF && u_val < 0xFF7FFFFF) {
-		printf("Issue creating 24-bit immediate; ");
+		printf("%lu to %lu makes 0x%X (%ld)\n", (unsigned long)s, (unsigned long)d, u_val, (long)val);
+		printf("Issue creating 24-bit immediate: ");
 		encodingIssue(i);
 	}
 
@@ -244,7 +265,7 @@ uint32_t b(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsig
 	uint32_t encoding = 0x0A000000;
 
 	unsigned int inst_label_length = 0;
-	for (; oprnd1_start[inst_label_length] != ' ' && oprnd1_start[inst_label_length] != '\t' && oprnd1_start[inst_label_length] != '\n' && oprnd1_start[inst_label_length] != ';'; inst_label_length++);
+	for (; oprnd1_start[inst_label_length] >= 'a' && oprnd1_start[inst_label_length] <= 'z'; inst_label_length++);
 
 	unsigned long label_i = findLabel(oprnd1_start, inst_label_length, labels, label_tot);
 	if (label_i == label_tot) { // TODO: maybe someday we can support branching to a direct address (e.g. b $8000000)
@@ -263,6 +284,24 @@ uint32_t b(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsig
 
 uint32_t bl(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
 	return b(inst_offset, oprnd1_start, labels, label_tot, i) | (1 << 24);
+}
+
+uint32_t bx(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
+	uint32_t encoding = 0x012FFF10;
+
+	uint8_t reg_data = readReg(oprnd1_start, i);
+
+	if (reg_data & (1 << 7)) {
+		return 0;
+	}
+	if (reg_data & (1 << 4)) {
+		printf("Branch and Exchange does not support writeback: ");
+		encodingIssue(i);
+	}
+
+	encoding |= reg_data & 0xF;
+
+	return encoding;
 }
 
 /* will likely need rework, it was fun to mess around earlier though
@@ -307,7 +346,7 @@ InstEncoding *createEncodings() {
 	encodings[7] =	(InstEncoding){b,						"b",		1,	COND_ONLY};
 	encodings[8] =	(InstEncoding){unsupportedInstruction,	"bic",		3,	SET_FLAGS};
 	encodings[9] =	(InstEncoding){bl,						"bl",		2,	COND_ONLY};
-	encodings[10] =	(InstEncoding){unsupportedInstruction,	"bx",		2,	COND_ONLY};
+	encodings[10] =	(InstEncoding){bx,						"bx",		2,	COND_ONLY};
 	encodings[11] =	(InstEncoding){unsupportedInstruction,	"cmn",		3,	COND_ONLY};
 	encodings[12] =	(InstEncoding){unsupportedInstruction,	"cmp",		3,	COND_ONLY};
 	encodings[13] =	(InstEncoding){unsupportedInstruction,	"eor",		3,	SET_FLAGS};
@@ -602,7 +641,7 @@ int main(int argc, char **argv) {
 
 					break;
 				default:
-					*c = getLowerChar(*c);
+					*c = getLowerChar(*c); // TODO: the goal here is to have every character lowercase so that we don't have to do getLowerChar on characters again in the future, so we need to check to make sure this is setting all to lowercase (except things like labels and label calls unless we want to make it so that something like "ABC" == "abc"), and then we should remove all getLowerChar in later code
 
 					enum BlockType block_type = blocks[count_blocks - 1].type;
 					if (block_type == UNKNOWN_BLOCK) {
@@ -688,7 +727,7 @@ int main(int argc, char **argv) {
 					int encode_i = 0;
 					int last_encode_success = -1;
 					int mi = 0;
-					for (; encode_i < ENCODINGS_COUNT && mnemonic_start[mi] != ' ' && mnemonic_start[mi] != '\t' && mnemonic_start[mi] != '\n' && mnemonic_start[mi] != ';'; mi++) {
+					for (; encode_i < ENCODINGS_COUNT && mnemonic_start[mi] >= 'a' && mnemonic_start[mi] <= 'z'; mi++) {
 						while (encode_i < ENCODINGS_COUNT && encodings[encode_i].mnemonic[mi] != getLowerChar(mnemonic_start[mi])) {
 							encode_i++;
 
@@ -754,7 +793,7 @@ int main(int argc, char **argv) {
 						encoding |= cond << 28;
 
 						//printf("MI=%d->'%c'", mi, mnemonic_start[mi]);
-						for (; mnemonic_start[mi] != ' ' && mnemonic_start[mi] != '\t' && mnemonic_start[mi] != '\n'; mi++);
+						for (; mnemonic_start[mi] != ' ' && mnemonic_start[mi] != '\t' && mnemonic_start[mi] != '\n'; mi++); // TODO: do we really need this, we kind of check this earlier--review
 						if (mnemonic_start + mi > asm_buffer_start + 2) {
 							char last_two[] = {getLowerChar(mnemonic_start[mi - 2]), getLowerChar(mnemonic_start[mi - 1])};
 
@@ -915,18 +954,16 @@ int main(int argc, char **argv) {
 									}
 									break;
 								case DEC:
-									val *= 10;
 									if (*c >= '0' && *c <= '9') {
-										val += *c - '0';
+										val = val * 10 + (*c - '0');
 									} else {
 										printf("Broken decimal literal: ");
 										lineIssue(&lines[i]);
 									}
 									break;
 								case BIN:
-									val <<= 1;
 									if (*c == '0' || *c || '1') {
-										val += *c - '0';
+										val = (val << 1) + (*c - '0');
 									} else {
 										printf("Broken binary literal: ");
 										lineIssue(&lines[i]);

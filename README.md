@@ -22,6 +22,7 @@ Name | Instruction | Example Usage
 ---- | ----------- | -------------
 Branch | `b{<cond>} <label>` | `b start`
 Branch with Link | `bl{<cond>} <label>` | `bl div`
+Branch and Exchange | `bx{<cond>} <Rm>` | `bx r14`
 
 ### Pseudo-Instructions
 
