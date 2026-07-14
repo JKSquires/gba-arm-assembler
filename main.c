@@ -95,6 +95,7 @@ struct Line {
 struct Label {
 	char *start;
 	uint32_t offset;
+	unsigned int length;
 };
 
 struct InstructionBlock {
@@ -103,7 +104,7 @@ struct InstructionBlock {
 };
 
 struct InstructionEncoding {
-	uint32_t (*encode)(Inst *instruction);
+	uint32_t (*encode)(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i);
 	char *mnemonic;
 	uint8_t mnemonic_length;
 	enum InstructionSuffix suffix;
@@ -168,8 +169,30 @@ char *skipEmptyLines(char *c, char *buffer_end, unsigned long *file_line_num) {
 	return c;
 }
 
+unsigned long findLabel(char *inst_label, unsigned int inst_label_length, struct Label *labels, unsigned long label_tot) {
+	unsigned long labels_i = 0;
+	for (; labels_i < label_tot; labels_i++) {
+		unsigned int label_length = 0;
+		for (; labels[labels_i].start[label_length] != ':'; label_length++);
+
+		bool matches = true;
+		if (inst_label_length != label_length) {
+			matches = false;
+		} else {
+			for (int i = 0; i < inst_label_length; i++) {
+				if (inst_label[i] != labels[labels_i].start[i])
+					matches = false;
+			}
+		}
+
+		if (matches) break;
+	}
+
+	return labels_i;
+}
+
 void lineIssue(struct Line *line) {
-	printf("Issue on line %lu: ", line->line_num);
+	printf("Issue on line %lu:\n", line->line_num);
 	for (char *c = line->start; *c != '\n'; c++) {
 		printf("%c", *c);
 	}
@@ -205,6 +228,43 @@ uint16_t imm12(uint32_t val, Inst *i) {
 	return (r << 8) | imm8;
 }
 
+uint32_t imm24(uint32_t s, uint32_t d, Inst *i) {
+	int32_t val = (d - (s + 8)) / 4;
+	uint32_t u_val = (uint32_t)val;
+
+	if (u_val > 0x00FFFFFF && u_val < 0xFF7FFFFF) {
+		printf("Issue creating 24-bit immediate; ");
+		encodingIssue(i);
+	}
+
+	return u_val & 0x00FFFFFF;
+}
+
+uint32_t b(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
+	uint32_t encoding = 0x0A000000;
+
+	unsigned int inst_label_length = 0;
+	for (; oprnd1_start[inst_label_length] != ' ' && oprnd1_start[inst_label_length] != '\t' && oprnd1_start[inst_label_length] != '\n' && oprnd1_start[inst_label_length] != ';'; inst_label_length++);
+
+	unsigned long label_i = findLabel(oprnd1_start, inst_label_length, labels, label_tot);
+	if (label_i == label_tot) { // TODO: maybe someday we can support branching to a direct address (e.g. b $8000000)
+		printf("Cannot find label for branch: ");
+		encodingIssue(i);
+
+		return 0;
+	}
+
+	uint32_t label_offset = labels[label_i].offset;
+
+	encoding |= imm24(inst_offset, label_offset, i);
+
+	return encoding;
+}
+
+uint32_t bl(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
+	return b(inst_offset, oprnd1_start, labels, label_tot, i) | (1 << 24);
+}
+
 /* will likely need rework, it was fun to mess around earlier though
 uint32_t mov(Inst *i) {
 	uint32_t encoding = 0;
@@ -226,7 +286,7 @@ uint32_t mov(Inst *i) {
 }
 */
 
-uint32_t unsupportedInstruction(Inst *i) {
+uint32_t unsupportedInstruction(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
 	printf("Unsupported instruction: ");
 	encodingIssue(i);
 
@@ -244,9 +304,9 @@ InstEncoding *createEncodings() {
 	encodings[4] =	(InstEncoding){unsupportedInstruction,	"adrl",		4,	COND_ONLY};
 	encodings[5] =	(InstEncoding){unsupportedInstruction,	"and",		3,	SET_FLAGS};
 	encodings[6] =	(InstEncoding){unsupportedInstruction,	"asr",		3,	COND_ONLY};
-	encodings[7] =	(InstEncoding){unsupportedInstruction,	"b",		1,	COND_ONLY};
+	encodings[7] =	(InstEncoding){b,						"b",		1,	COND_ONLY};
 	encodings[8] =	(InstEncoding){unsupportedInstruction,	"bic",		3,	SET_FLAGS};
-	encodings[9] =	(InstEncoding){unsupportedInstruction,	"bl",		2,	COND_ONLY};
+	encodings[9] =	(InstEncoding){bl,						"bl",		2,	COND_ONLY};
 	encodings[10] =	(InstEncoding){unsupportedInstruction,	"bx",		2,	COND_ONLY};
 	encodings[11] =	(InstEncoding){unsupportedInstruction,	"cmn",		3,	COND_ONLY};
 	encodings[12] =	(InstEncoding){unsupportedInstruction,	"cmp",		3,	COND_ONLY};
@@ -371,7 +431,8 @@ int main(int argc, char **argv) {
 		if (*c == '\n') {
 			comment = false;
 			if (track_operand_state != REGULAR) {
-				printf("Memory/multiple register operand not closed properly on line %lu\n", file_line_num);
+				printf("Memory/multiple register operand not closed properly: ");
+				lineIssue(&lines[line_num]);
 				track_operand_state = REGULAR;
 			}
 			file_line_num++;
@@ -435,7 +496,8 @@ int main(int argc, char **argv) {
 							break;
 						case 'a':
 							if (*(c + 2) == ' ') {
-								printf("\nAlign bytes directive is unsupported right now\n"); // TODO: Implement; maybe something like `@a <num; e.g. 4 or 2>`
+								printf("\nAlign bytes directive is unsupported right now: "); // TODO: Implement; maybe something like `@a <num; e.g. 4 or 2>`
+								lineIssue(&lines[line_num]);
 								lines[line_num].type = DIR_A;
 
 								c += 0; // TODO: count
@@ -444,7 +506,8 @@ int main(int argc, char **argv) {
 							break;
 						case 'i':
 							if (*(c + 2) == ' ') {
-								printf("\nInclude directive is unsupported right now\n"); // TODO: Implement; maybe something like `@i "<file name>"`
+								printf("\nInclude directive is unsupported right now: "); // TODO: Implement; maybe something like `@i "<file name>"`
+								lineIssue(&lines[line_num]);
 								lines[line_num].type = DIR_I;
 
 								c += 4;
@@ -452,7 +515,8 @@ int main(int argc, char **argv) {
 							break;
 						case 't':
 							if (*(c + 2) == ' ') {
-								printf("\nText directive is unsupported right now\n"); // TODO: Implement; maybe something like `@t "<text>"`
+								printf("\nText directive is unsupported right now: "); // TODO: Implement; maybe something like `@t "<text>"`
+								lineIssue(&lines[line_num]);
 								lines[line_num].type = DIR_T;
 
 								c += 0; // TODO: count characters for c and track_rom_size
@@ -472,30 +536,19 @@ int main(int argc, char **argv) {
 
 					unsigned int label_length = c - lines[line_num].start;
 
-					bool is_dup = false;
-					for (unsigned long i = 0; i < label_tot; i++) {
-						unsigned int dup_char = 0;
-						for (unsigned long si = 0; si < label_length; si++) {
-							if (lines[line_num].start[si] == labels[i].start[si]) {
-								dup_char++;
-							}
-						}
+					unsigned long label_i = findLabel(lines[line_num].start, label_length, labels, label_tot);
 
-						if (dup_char == label_length) {
-							is_dup = true;
-							printf("Duplicate label on line %lu\n", file_line_num);
-							break;
-						}
-					}
-
-					if (!is_dup) {
+					if (label_i == label_tot) {
 						if (label_tot == labels_arr_size) {
 							labels_arr_size *= 2;
 							labels = realloc(labels, labels_arr_size * sizeof *labels);
 						}
 
-						labels[label_tot] = (struct Label){lines[line_num].start, track_rom_size};
+						labels[label_tot] = (struct Label){lines[line_num].start, track_rom_size, label_length};
 						label_tot++;
+					} else {
+						printf("Duplicate label: ");
+						lineIssue(&lines[line_num]);
 					}
 
 					break;
@@ -506,13 +559,15 @@ int main(int argc, char **argv) {
 						c = skipWhitespace(c + 1) - 1;
 						blocks[count_blocks - 1] = (struct InstructionBlock){c + 1, track_operand_state != MULTIPLE ? UNKNOWN_BLOCK : MUL_REG};
 					} else {
-						printf("Too many operands on line %lu\n", file_line_num);
+						printf("Too many operands: ");
+						lineIssue(&lines[line_num]);
 					}
 
 					break;
 				case '[':
 					if (track_operand_state != REGULAR) {
-						printf("Broken memory operand on line %lu\n", file_line_num);
+						printf("Broken memory operand: ");
+						lineIssue(&lines[line_num]);
 					}
 
 					track_operand_state = MEMORY;
@@ -520,7 +575,8 @@ int main(int argc, char **argv) {
 					break;
 				case ']':
 					if (track_operand_state != MEMORY) {
-						printf("Broken memory operand on line %lu\n", file_line_num);
+						printf("Broken memory operand: ");
+						lineIssue(&lines[line_num]);
 					}
 
 					track_operand_state = REGULAR;
@@ -528,7 +584,8 @@ int main(int argc, char **argv) {
 					break;
 				case '{':
 					if (blocks[count_blocks - 1].type != UNKNOWN_BLOCK) {
-						printf("Broken multiple register operand on line %lu\n", file_line_num);
+						printf("Broken multiple register operand: ");
+						lineIssue(&lines[line_num]);
 					}
 
 					track_operand_state = MULTIPLE;
@@ -537,7 +594,8 @@ int main(int argc, char **argv) {
 					break;
 				case '}':
 					if (blocks[count_blocks - 1].type != MUL_REG) {
-						printf("Broken multiple register operand on line %lu\n", file_line_num);
+						printf("Broken multiple register operand: ");
+						lineIssue(&lines[line_num]);
 					}
 
 					track_operand_state = REGULAR;
@@ -598,7 +656,7 @@ int main(int argc, char **argv) {
 
 	InstEncoding *encodings = createEncodings();
 	unsigned char *rom = calloc(track_rom_size, 1);
-	unsigned long rom_offset = 0;
+	uint32_t rom_offset = 0;
 
 	printf("DIR_B = %d, DIR_H = %d, DIR_W = %d, CODE = %d, LABEL = %d, END = %d, DIR_UNK = %d, DIR_A = %d, DIR_I = %d, DIR_T = %d\n", DIR_B, DIR_H, DIR_W, CODE, LABEL, END, DIR_UNK, DIR_A, DIR_I, DIR_T);
 	printf("UNKNOWN_BLOCK = %d, FIRST = %d, REG = %d, IMM = %d, LBL = %d, SHIFT_REG = %d, SHIFT_IMM = %d, MEM_REG = %d, MEM_IMM = %d, MEM_LBL = %d, MEM_SHIFT_REG = %d, MEM_SHIFT_IMM = %d, MUL_REG = %d\n", UNKNOWN_BLOCK, FIRST, REG, IMM, LBL, SHIFT_REG, SHIFT_IMM, MEM_REG, MEM_IMM, MEM_LBL, MEM_SHIFT_REG, MEM_SHIFT_IMM, MUL_REG);
@@ -672,13 +730,25 @@ int main(int argc, char **argv) {
 					}
 
 					if (starts_with_last_success && encodings[last_encode_success].suffix != NOP) {
-						InstEncoding *success_encoding = &(encodings[last_encode_success]);
+						InstEncoding *success_encoding;
 
-						// FIXME: right now, not all instructions read properly, like `blt`, which will read as `bl` + `t`, not `b` + `lt`
+						// TODO: make sure all instructions read properly, like `blt`, used to read as `bl` + `t`, not `b` + `lt`
+						if (last_encode_success == 9 && mi == 3) { // make sure bl isn't actually something like blt
+							printf("BL should be B\n");
+							success_encoding = &(encodings[7]);
+						} else {
+							success_encoding = &(encodings[last_encode_success]);
+						}
+
 						printf("Probable mnemonic #%d (%s)\n", last_encode_success, success_encoding->mnemonic);
-						// TODO: encode as much of the mnemonic as we can at this stage, later, we'll read the rest of the instruction to determine other values we can OR in.
 
-						enum InstructionCondition cond = getInstCond(mnemonic_start + success_encoding->mnemonic_length); // TODO: when AL comes through, need to check to make sure it is proper.
+						// TODO: encode as much of the mnemonic as we can at this stage, later, we'll read the rest of the instruction to determine other values we can OR in.
+						char *oprnd1_start = mnemonic_start + mi;
+						for (; *oprnd1_start != ' ' && *oprnd1_start != '\t' && *oprnd1_start != '\n' && *oprnd1_start != ';'; *oprnd1_start++);
+						oprnd1_start = skipWhitespace(oprnd1_start);
+						encoding = success_encoding->encode(rom_offset, oprnd1_start, labels, label_tot, inst);
+
+						enum InstructionCondition cond = mi == success_encoding->mnemonic_length ? AL : getInstCond(mnemonic_start + success_encoding->mnemonic_length); // TODO: when AL comes through, need to check to make sure it is proper.
 						printf("Probable instruction condition: 0x%x\n", cond);
 
 						encoding |= cond << 28;
@@ -760,7 +830,7 @@ int main(int argc, char **argv) {
 											}
 											break;
 										default:
-											if (getLowerChar(*mnemonic_start) == 'l') { // ldm__
+											if (last_encode_success == 14) { // ldm__
 												switch (last_two[0]) {
 													case 'e':
 														switch (last_two[1]) { // TODO: are we using too many switch-cases?

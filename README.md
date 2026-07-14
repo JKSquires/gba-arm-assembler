@@ -18,13 +18,18 @@ gcc -fshort-enums main.c -pthread -o gbaaa -s
 
 ## Supported Instructions
 
+Name | Instruction | Example Usage
+---- | ----------- | -------------
+Branch | `b{<cond>} <label>` | `b start`
+Branch with Link | `bl{<cond>} <label>` | `bl div`
+
 ### Pseudo-Instructions
 
 ## Supported Assembler Directives
 
-Directive | Description | Example Usage
---------- | ----------- | -------------
-`@b <byte list>` | Define bytes | `@b $10, #255`
-`@h <halfword list>` | Define halfwords | `@h %10000000011`
-`@w <word list>` | Define words | `@w $05000200, $4000130, %110000000000000000000000010`
+Name | Directive | Example Usage
+---- | --------- | -------------
+Define bytes | `@b <byte list>` | `@b $10, #255`
+Define halfwords | `@h <halfword list>` | `@h %10000000011`
+Define words | `@w <word list>` | `@w $05000200, $4000130, %110000000000000000000000010`
 
