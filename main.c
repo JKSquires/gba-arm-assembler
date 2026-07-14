@@ -265,7 +265,7 @@ uint32_t b(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsig
 	uint32_t encoding = 0x0A000000;
 
 	unsigned int inst_label_length = 0;
-	for (; oprnd1_start[inst_label_length] >= 'a' && oprnd1_start[inst_label_length] <= 'z'; inst_label_length++);
+	for (; oprnd1_start[inst_label_length] >= 'a' && oprnd1_start[inst_label_length] <= 'z' || oprnd1_start[inst_label_length] >= '0' && oprnd1_start[inst_label_length] <= '9'; inst_label_length++);
 
 	unsigned long label_i = findLabel(oprnd1_start, inst_label_length, labels, label_tot);
 	if (label_i == label_tot) { // TODO: maybe someday we can support branching to a direct address (e.g. b $8000000)
