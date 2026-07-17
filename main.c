@@ -296,6 +296,12 @@ uint32_t imm24(uint32_t s, uint32_t d, Inst *i) {
 	return val & 0x00FFFFFF;
 }
 
+uint32_t shiftPseudoInst(char *oprnd1_start, enum BlockType type, Inst *i);
+
+uint32_t asr(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
+	return shiftPseudoInst(oprnd1_start, ASR, i);
+}
+
 uint32_t b(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
 	uint32_t encoding = 0x0A000000;
 
@@ -335,6 +341,14 @@ uint32_t bx(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsi
 	return encoding;
 }
 
+uint32_t lsl(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
+	return shiftPseudoInst(oprnd1_start, LSL, i);
+}
+
+uint32_t lsr(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
+	return shiftPseudoInst(oprnd1_start, LSR, i);
+}
+
 uint32_t mov(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
 	uint32_t encoding = 0x01A00000;
 
@@ -362,12 +376,12 @@ uint32_t mov(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, uns
 
 		if (i->block_count >= 3) {
 			if (i->blocks[2].type & SHIFT) {
+				encoding |= (i->blocks[2].type & BLOCK_TYPE_SHIFT_MASK) & 0x7F;
+
 				if ((i->blocks[2].type & BLOCK_TYPE_SHIFT_MASK) != RRX) {
 					char *val_start = i->blocks[2].start;
 					for (; val_start < i->blocks[2].start + 4 && *val_start != '\n' && *val_start != ';'; val_start++);
 					val_start = skipWhitespace(val_start);
-
-					encoding |= (i->blocks[2].type & BLOCK_TYPE_SHIFT_MASK) & 0x7F;
 
 					switch (i->blocks[2].type & BLOCK_TYPE_MASK) {
 						case IMM:
@@ -424,11 +438,48 @@ uint32_t nop(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, uns
 	return 0x00000000;
 }
 
+uint32_t ror(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
+	return shiftPseudoInst(oprnd1_start, ROR, i);
+}
+
+uint32_t rrx(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
+	if (i->block_count < 2) {
+		printf("Rotate Right with Extend requires 2 operands: ");
+		encodingIssue(i);
+		return 0;
+	}
+
+	struct InstructionBlock *old_blocks = i->blocks;
+	i->blocks = malloc(3 * sizeof (struct InstructionBlock));
+	for (int ibi = 0; ibi < 2; ibi++) {
+		i->blocks[ibi] = old_blocks[ibi];
+	}
+	i->blocks[2] = (struct InstructionBlock){"\n", REG};
+	i->block_count++;
+
+	free(old_blocks);
+
+	return shiftPseudoInst(oprnd1_start, RRX, i);
+}
+
 uint32_t unsupportedInstruction(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
 	printf("Unsupported instruction: ");
 	encodingIssue(i);
 
 	return 0;
+}
+
+uint32_t shiftPseudoInst(char *oprnd1_start, enum BlockType type, Inst *i) {
+	if (i->block_count < 3 || i->blocks[1].type != REG || !(i->blocks[2].type == IMM || i->blocks[2].type == REG)) {
+		printf("Shift pseudo instruction is formatted incorrectly: ");
+		encodingIssue(i);
+		return 0;
+	}
+
+	i->blocks[2].type |= SHIFT | type;
+	i->blocks[2].start -= 4;
+
+	return mov(0, oprnd1_start, NULL, 0, i);
 }
 
 InstEncoding *createEncodings() {
@@ -441,7 +492,7 @@ InstEncoding *createEncodings() {
 	encodings[3] =	(InstEncoding){unsupportedInstruction,	"adr",		3,	COND_ONLY};
 	encodings[4] =	(InstEncoding){unsupportedInstruction,	"adrl",		4,	COND_ONLY};
 	encodings[5] =	(InstEncoding){unsupportedInstruction,	"and",		3,	SET_FLAGS};
-	encodings[6] =	(InstEncoding){unsupportedInstruction,	"asr",		3,	COND_ONLY}; // TODO: now that MOV is implemented, implementation should be easier now
+	encodings[6] =	(InstEncoding){asr,						"asr",		3,	SET_FLAGS}; // TODO: now that MOV is implemented, implementation should be easier now
 	encodings[7] =	(InstEncoding){b,						"b",		1,	COND_ONLY};
 	encodings[8] =	(InstEncoding){unsupportedInstruction,	"bic",		3,	SET_FLAGS};
 	encodings[9] =	(InstEncoding){bl,						"bl",		2,	COND_ONLY};
@@ -451,8 +502,8 @@ InstEncoding *createEncodings() {
 	encodings[13] =	(InstEncoding){unsupportedInstruction,	"eor",		3,	SET_FLAGS};
 	encodings[14] =	(InstEncoding){unsupportedInstruction,	"ldm",		3,	ADDRESSING_MODE};
 	encodings[15] =	(InstEncoding){unsupportedInstruction,	"ldr",		3,	DATA_SIZE};
-	encodings[16] =	(InstEncoding){unsupportedInstruction,	"lsl",		3,	COND_ONLY}; // TODO: now that MOV is implemented, implementation should be easier now
-	encodings[17] =	(InstEncoding){unsupportedInstruction,	"lsr",		3,	COND_ONLY}; // TODO: now that MOV is implemented, implementation should be easier now
+	encodings[16] =	(InstEncoding){lsl,						"lsl",		3,	SET_FLAGS}; // TODO: now that MOV is implemented, implementation should be easier now
+	encodings[17] =	(InstEncoding){lsr,						"lsr",		3,	SET_FLAGS}; // TODO: now that MOV is implemented, implementation should be easier now
 	encodings[18] =	(InstEncoding){unsupportedInstruction,	"mla",		3,	SET_FLAGS};
 	encodings[19] =	(InstEncoding){mov,						"mov",		3,	SET_FLAGS};
 	encodings[20] =	(InstEncoding){unsupportedInstruction,	"mrs",		3,	COND_ONLY};
@@ -464,8 +515,8 @@ InstEncoding *createEncodings() {
 	encodings[26] =	(InstEncoding){unsupportedInstruction,	"orr",		3,	SET_FLAGS};
 	encodings[27] =	(InstEncoding){unsupportedInstruction,	"pop",		3,	COND_ONLY};
 	encodings[28] =	(InstEncoding){unsupportedInstruction,	"push",		4,	COND_ONLY};
-	encodings[29] =	(InstEncoding){unsupportedInstruction,	"ror",		3,	COND_ONLY}; // TODO: now that MOV is implemented, implementation should be easier now
-	encodings[30] =	(InstEncoding){unsupportedInstruction,	"rrx",		3,	COND_ONLY}; // TODO: now that MOV is implemented, implementation should be easier now
+	encodings[29] =	(InstEncoding){ror,						"ror",		3,	SET_FLAGS}; // TODO: now that MOV is implemented, implementation should be easier now
+	encodings[30] =	(InstEncoding){rrx,						"rrx",		3,	SET_FLAGS}; // TODO: now that MOV is implemented, implementation should be easier now
 	encodings[31] =	(InstEncoding){unsupportedInstruction,	"rsb",		3,	SET_FLAGS};
 	encodings[32] =	(InstEncoding){unsupportedInstruction,	"rsc",		3,	SET_FLAGS};
 	encodings[33] =	(InstEncoding){unsupportedInstruction,	"sbc",		3,	SET_FLAGS};
@@ -611,7 +662,7 @@ int main(int argc, char **argv) {
 		}
 
 		if (!comment) {
-			//printf("<%c>", *c); // TODO: remove debug line
+			printf("<%c>", *c); // TODO: remove debug line
 
 			switch (*c) {
 				case '@':
@@ -754,8 +805,9 @@ int main(int argc, char **argv) {
 							case 'r':
 								if (*(c + 1) >= '0' && *(c + 1) <= '9') {
 									blocks[count_blocks - 1].type = track_operand_state == REGULAR ? REG : MEM_REG;
+									break;
 								}
-								break;
+								// Fall through otherwise
 							default:
 								blocks[count_blocks - 1].type = LBL;
 
@@ -764,34 +816,38 @@ int main(int argc, char **argv) {
 								if (c3[0] != '\n') c3[1] = getLowerChar(*(c + 1));
 								if (c3[1] != '\n') c3[2] = getLowerChar(*(c + 2));
 
+								printf("CHARS(%c)(%c)(%c)", c3[0], c3[1], c3[2]);
+
 								if (c3[0] == 'l' && c3[1] == 's' && c3[2] == 'l'
 									|| c3[0] == 'l' && c3[1] == 's' && c3[2] == 'r'
 									|| c3[0] == 'a' && c3[1] == 's' && c3[2] == 'r'
 									|| c3[0] == 'r' && c3[1] == 'o' && c3[2] == 'r'
 									|| c3[0] == 'r' && c3[1] == 'r' && c3[2] == 'x') {
 
+									printf("SHIFT");
+
 									if (c3[0] == 'a' && c3[1] == 's' && c3[2] == 'l') { // handle arithmetic left shift
 										*c = 'l';
-										blocks[count_blocks - 1].type |= LSL;
+										blocks[count_blocks - 1].type = LSL;
 									} else if (c3[0] == 'a' && c3[1] == 's' && c3[2] == 'r') {
-										blocks[count_blocks - 1].type |= ASR;
+										blocks[count_blocks - 1].type = ASR;
 									} else if (c3[0] == 'l' && c3[1] == 's' && c3[2] == 'l') {
-										blocks[count_blocks - 1].type |= LSL;
+										blocks[count_blocks - 1].type = LSL;
 									} else if (c3[0] == 'l' && c3[1] == 's' && c3[2] == 'r') {
-										blocks[count_blocks - 1].type |= LSR;
+										blocks[count_blocks - 1].type = LSR;
 									} else if (c3[0] == 'r' && c3[1] == 'o' && c3[2] == 'r') {
-										blocks[count_blocks - 1].type |= ROR;
+										blocks[count_blocks - 1].type = ROR;
 									} else if (c3[0] == 'r' && c3[1] == 'r' && c3[2] == 'x') {
-										blocks[count_blocks - 1].type |= RRX;
+										blocks[count_blocks - 1].type = RRX | SHIFT;
 									}
 
 									char *skip_shift_whitespace = skipWhitespace(c + 3);
 									if (skip_shift_whitespace == c + 3) break;
 
 									if (*skip_shift_whitespace == '$' || *skip_shift_whitespace == '#' || *skip_shift_whitespace == '%') {
-										blocks[count_blocks - 1].type = track_operand_state == REGULAR ? SHIFT_IMM : MEM_SHIFT_IMM;
+										blocks[count_blocks - 1].type |= track_operand_state == REGULAR ? SHIFT_IMM : MEM_SHIFT_IMM;
 									} else {
-										blocks[count_blocks - 1].type = track_operand_state == REGULAR ? SHIFT_REG : MEM_SHIFT_REG;
+										blocks[count_blocks - 1].type |= track_operand_state == REGULAR ? SHIFT_REG : MEM_SHIFT_REG;
 									}
 								}
 
