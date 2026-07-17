@@ -2,16 +2,24 @@
 
 I don't know what I'm doing so I'm learning.
 
-I just know that I'm going to look back at this code in the future and think, "wow was I bad at programming," and that's a good thing.
+I just know that I'm going to look back at this code in the future and think, "wow was I bad at programming!"
 
 ---
 
 ## Build Instructions
 
-Requires pthread.
+Compile the main C file.
+
+Recommended way:
 
 ```sh
-gcc -fshort-enums main.c -o gbaaa -s
+gcc -O2 -s -fshort-enums main.c -o gbaaa
+```
+
+But if you really wanted to, you could just run:
+
+```sh
+gcc main.c
 ```
 
 ---
