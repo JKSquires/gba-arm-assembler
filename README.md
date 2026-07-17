@@ -11,7 +11,7 @@ I just know that I'm going to look back at this code in the future and think, "w
 Requires pthread.
 
 ```sh
-gcc -fshort-enums main.c -pthread -o gbaaa -s
+gcc -fshort-enums main.c -o gbaaa -s
 ```
 
 ---
@@ -23,6 +23,7 @@ Name | Instruction | Example Usage
 Branch | `b{<cond>} <label>` | `b start`
 Branch with Link | `bl{<cond>} <label>` | `bl div`
 Branch and Exchange | `bx{<cond>} <Rm>` | `bx r14`
+Move | `mov{<cond>}{s} Rd <oprnd2>` | `mov r0, r2` / `mov r8,$6000000` / `moveqs r5, r3, lsr #3`
 
 ### Pseudo-Instructions
 
