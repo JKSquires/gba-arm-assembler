@@ -711,7 +711,7 @@ int main(int argc, char **argv) {
 
 			if (lines[line_num].type == CODE) {
 				Inst *inst = malloc(sizeof *inst);
-				inst->line = &(lines[line_num]);
+				inst->line = &(lines[line_num]); // FIXME FIXME FIXME FIXME FIXME FIXME: when the lines array gets reallocated, this pointer may no longer point to the spot in the array and be in invalid space. VERY BAD .-.
 				inst->blocks = malloc(count_blocks * sizeof (struct InstructionBlock));
 				for (int i = 0; i < count_blocks; i++) {
 					inst->blocks[i] = blocks[i];
