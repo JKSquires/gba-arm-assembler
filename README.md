@@ -37,6 +37,7 @@ Branch with Link | `bl{<cond>} <label>` | `bl div`
 Branch and Exchange | `bx{<cond>} <Rm>` | `bx r14`
 Bitwise Exclusive Or | `eor{<cond>}{s} <Rd>, <Rn>, <oprnd2> {, <shift>}` | `eor r0, r0, r1` / `eor r3, r12, #127` / `eor r2, r3, r4, asr r5`
 Move | `mov{<cond>}{s} <Rd>, <oprnd2> {, <shift>}` | `mov r0, r2` / `mov r8,$6000000` / `moveqs r5, r3, lsr #3`
+Move Not | `mvn{<cond>}{s} <Rd>, <oprnd2> {, <shift>}` | `mvn r0, r2` / `mvn r8,$6000000` / `mvneqs r5, r3, lsr #3`
 Bitwise Or | `orr{<cond>}{s} <Rd>, <Rn>, <oprnd2> {, <shift>}` | `orr r0, r0, r1` / `orr r3, r12, #127` / `orr r2, r3, r4, asr r5`
 Reverse Subtract | `rsb{<cond>}{s} <Rd>, <Rn>, <oprnd2> {, <shift>}` | `rsb r0, r0, r1` / `rsb r3, r12, #127` / `rsb r2, r3, r4, asr r5`
 Reverse Subtract with Carry | `rsc{<cond>}{s} <Rd>, <Rn>, <oprnd2> {, <shift>}` | `rsc r0, r0, r1` / `rsc r3, r12, #127` / `rsc r2, r3, r4, asr r5`

@@ -24,7 +24,6 @@ enum LineType {
 	DIR_W = 4,
 	CODE,
 	LABEL,
-	END,
 	DIR_UNK,
 	DIR_A,
 	DIR_I,
@@ -296,6 +295,7 @@ uint32_t imm24(uint32_t s, uint32_t d, Inst *i) {
 
 uint32_t handleShift(uint8_t oprnd_i, Inst *i);
 uint32_t rdRnOprnd2(char *oprnd1_start, Inst *i);
+uint32_t rxOprnd2(char *oprnd1_start, Inst *i);
 uint32_t shiftPseudoInst(char *oprnd1_start, enum BlockType type, Inst *i);
 
 uint32_t adc(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
@@ -369,49 +369,11 @@ uint32_t lsr(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, uns
 }
 
 uint32_t mov(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
-	uint32_t encoding = 0x01A00000;
+	return 0x01A00000 | rxOprnd2(oprnd1_start, i);
+}
 
-	uint8_t d_reg_data = readReg(oprnd1_start, 1, false, i);
-
-	if (d_reg_data & REG_READ_ERR)
-		return 0;
-
-	encoding |= (d_reg_data & 0xF) << 12;
-
-	if (i->block_count < 2) {
-		printf("Too few operands for move instruction: ");
-		encodingIssue(i);
-		return 0;
-	}
-
-	if (i->blocks[1].type & REG) {
-		uint8_t m_reg_data = readReg(i->blocks[1].start, 2, false, i);
-		if (m_reg_data & REG_READ_ERR)
-			return 0;
-
-		encoding |= m_reg_data & 0xF;
-
-		if (i->block_count >= 3) {
-			encoding |= handleShift(2, i);
-		}
-	} else {
-		uint32_t constant = readConst(i->blocks[1].start, i);
-		uint16_t imm = imm12(constant, i);
-
-		encoding |= (1 << 25) | (imm & 0xFFF);
-
-		if (i->block_count >= 3 && (i->blocks[2].type & SHIFT)) {
-			printf("Move with shift cannot be done to immediate: ");
-			encodingIssue(i);
-		}
-	}
-
-	if (i->block_count > 3) {
-		printf("Too many operands for move instruction: ");
-		encodingIssue(i);
-	}
-
-	return encoding;
+uint32_t mvn(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
+	return 0x01E00000 | rxOprnd2(oprnd1_start, i);
 }
 
 uint32_t nop(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
@@ -485,7 +447,7 @@ uint32_t handleShift(uint8_t oprnd_i, Inst *i) {
 				case IMM:
 					uint32_t constant = readConst(val_start, i);
 					if (constant > 32) {
-						printf("Immediate shift must be between 0 and 32 inclusive: ");
+						printf("Bit shift by immediate must be between 0 and 32 inclusive: ");
 						encodingIssue(i);
 					}
 					encoding |= (constant & 0x1F) << 7;
@@ -502,7 +464,7 @@ uint32_t handleShift(uint8_t oprnd_i, Inst *i) {
 			}
 		}
 	} else {
-		printf("Expected shift in operand %d: ", oprnd_i + 1);
+		printf("Expected bit shift in operand %d: ", oprnd_i + 1);
 		encodingIssue(i);
 	}
 
@@ -513,7 +475,7 @@ uint32_t rdRnOprnd2(char *oprnd1_start, Inst *i) {
 	uint32_t encoding = 0;
 
 	if (i->block_count < 3) {
-		printf("Instruction requires 3 operands: ");
+		printf("Instruction requires at least 3 operands: ");
 		encodingIssue(i);
 		return 0;
 	}
@@ -544,7 +506,47 @@ uint32_t rdRnOprnd2(char *oprnd1_start, Inst *i) {
 		encoding |= (1 << 25) | (imm & 0xFFF);
 
 		if (i->block_count >= 4 && (i->blocks[3].type & SHIFT)) {
-			printf("Shift cannot be done to immediate: ");
+			printf("Bit shift cannot be done to immediate: ");
+			encodingIssue(i);
+		}
+	}
+
+	return encoding;
+}
+
+uint32_t rxOprnd2(char *oprnd1_start, Inst *i) {
+	uint32_t encoding = 0;
+
+	if (i->block_count < 2) {
+		printf("Instruction requires at least 2 operands: ");
+		encodingIssue(i);
+		return 0;
+	}
+
+	uint8_t reg1_data = readReg(oprnd1_start, 1, false, i);
+	if (reg1_data & REG_READ_ERR)
+		return 0;
+
+	encoding |= (reg1_data & 0xF) << 12;
+
+	if (i->blocks[1].type & REG) {
+		uint8_t reg2_data = readReg(i->blocks[1].start, 2, false, i);
+		if (reg2_data & REG_READ_ERR)
+			return 0;
+
+		encoding |= reg2_data & 0xF;
+
+		if (i->block_count >= 3) {
+			encoding |= handleShift(2, i);
+		}
+	} else {
+		uint32_t constant = readConst(i->blocks[1].start, i);
+		uint16_t imm = imm12(constant, i);
+
+		encoding |= (1 << 25) | (imm & 0xFFF);
+
+		if (i->block_count >= 3 && (i->blocks[2].type & SHIFT)) {
+			printf("Bit shift cannot be done to immediate: ");
 			encodingIssue(i);
 		}
 	}
@@ -554,7 +556,7 @@ uint32_t rdRnOprnd2(char *oprnd1_start, Inst *i) {
 
 uint32_t shiftPseudoInst(char *oprnd1_start, enum BlockType type, Inst *i) {
 	if (i->block_count < 3 || i->blocks[1].type != REG || !(i->blocks[2].type == IMM || i->blocks[2].type == REG)) {
-		printf("Shift pseudo instruction is formatted incorrectly: ");
+		printf("Bit shift pseudo instruction is formatted incorrectly: ");
 		encodingIssue(i);
 		return 0;
 	}
@@ -568,7 +570,7 @@ uint32_t shiftPseudoInst(char *oprnd1_start, enum BlockType type, Inst *i) {
 InstEncoding *createEncodings() {
 	InstEncoding *encodings = malloc(ENCODINGS_COUNT * sizeof *encodings);
 
-	// maybe instead of one function for each, find patterns like (Rd, Rn, <Oprnd2>), (imm24), (Rt, [Rn, +/- Rm{, <shift>}]{!}), etc. and make functions for those?
+	// TODO: most (if not all) of these instruction encoding functions are following a pattern, maybe we can refactor this to work with that? Maybe we could store the encoding function (like `rxOprnd2`) and the opcode. When we call these, we or them there instead of in every single function
 	encodings[0] =	(InstEncoding){adc,						"adc",		3,	SET_FLAGS};
 	encodings[1] =	(InstEncoding){add,						"add",		3,	SET_FLAGS};
 	encodings[2] =	(InstEncoding){unsupportedInstruction,	"addr",		4,	COND_ONLY};
@@ -592,7 +594,7 @@ InstEncoding *createEncodings() {
 	encodings[20] =	(InstEncoding){unsupportedInstruction,	"mrs",		3,	COND_ONLY};
 	encodings[21] =	(InstEncoding){unsupportedInstruction,	"msr",		3,	COND_ONLY};
 	encodings[22] =	(InstEncoding){unsupportedInstruction,	"mul",		3,	SET_FLAGS};
-	encodings[23] =	(InstEncoding){unsupportedInstruction,	"mvn",		3,	SET_FLAGS};
+	encodings[23] =	(InstEncoding){mvn,						"mvn",		3,	SET_FLAGS};
 	encodings[24] =	(InstEncoding){unsupportedInstruction,	"neg",		3,	COND_ONLY};
 	encodings[25] =	(InstEncoding){nop,						"nop",		3,	NOP};
 	encodings[26] =	(InstEncoding){orr,						"orr",		3,	SET_FLAGS};
@@ -670,7 +672,7 @@ int main(int argc, char **argv) {
 	rewind(asm_file);
 
 	char *asm_buffer = malloc(asm_size + 1);
-	fread(asm_buffer, 1, asm_size, asm_file);
+	fread(asm_buffer, 1, asm_size, asm_file); // TODO: once executed, check to make sure it worked
 	asm_buffer[asm_size] = '\n';
 
 	fclose(asm_file);
@@ -681,7 +683,7 @@ int main(int argc, char **argv) {
 	unsigned long line_num = 0;
 	unsigned long file_line_num = 1;
 
-	uint32_t track_rom_size = 0; // FIXME: right now, this relies on the first line being code or a directive. Need to account for empty start line or commented line. Maybe we can create a line type "SKIP" as a quick fix, but there should be a better way
+	uint32_t track_rom_size = 0;
 	unsigned long labels_arr_size = 64;
 	struct Label *labels = malloc(labels_arr_size * sizeof *labels); // FIXME: should absolutely use a hash table at some point instead
 	unsigned long label_tot = 0;
@@ -751,7 +753,7 @@ int main(int argc, char **argv) {
 		}
 
 		if (!comment) {
-			//printf("<%c>", *c); // TODO: remove debug line
+			//printf("<%c>", *c); // TODO: remove debug lines
 
 			switch (*c) {
 				case '@':
@@ -948,7 +950,6 @@ int main(int argc, char **argv) {
 			}
 		}
 	}
-	//lines[line_num] = (struct Line){NULL, NULL, file_line_num, END};
 
 
 	InstEncoding *encodings = createEncodings();
