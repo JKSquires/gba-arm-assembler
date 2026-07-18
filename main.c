@@ -165,7 +165,7 @@ unsigned long findLabel(char *inst_label, unsigned int inst_label_length, struct
 	unsigned long labels_i = 0;
 	for (; labels_i < label_tot; labels_i++) {
 		unsigned int label_length = 0;
-		for (; labels[labels_i].start[label_length] != ':'; label_length++);
+		for (; labels[labels_i].start[label_length] != ':' && labels[labels_i].start[label_length] != '\n'; label_length++);
 
 		bool matches = true;
 		if (inst_label_length != label_length) {
@@ -252,7 +252,7 @@ uint32_t readConst(char *constant, Inst *i) {
 					}
 					break;
 				case BIN:
-					if (*c == '0' || *c || '1') {
+					if (*c == '0' || *c == '1') {
 						data = (data << 1) + (*c - '0');
 					} else {
 						printf("Broken binary literal: ");
@@ -270,10 +270,8 @@ uint32_t readConst(char *constant, Inst *i) {
 }
 
 uint16_t imm12(uint32_t val, Inst *i) {
-	uint32_t imm8 = 0;
-	int r = 0;
 	for (int r = 0; r < 32; r += 2) {
-		imm8 = (val << r) | (uint32_t)((uint64_t)val >> (32 - r));
+		uint32_t imm8 = (val << r) | (uint32_t)((uint64_t)val >> (32 - r));
 
 		if ((imm8 & 0xFFFFFF00) == 0) {
 			return (r << 7) | imm8;
@@ -1217,7 +1215,7 @@ int main(int argc, char **argv) {
 									}
 									break;
 								case BIN:
-									if (*c == '0' || *c || '1') {
+									if (*c == '0' || *c == '1') {
 										val = (val << 1) + (*c - '0');
 									} else {
 										printf("Broken binary literal: ");
@@ -1299,7 +1297,7 @@ int main(int argc, char **argv) {
 
 	free(rom);
 	free(encodings);
-	for (int i = 0; i < line_num; i++) {
+	for (int i = 0; i <= line_num; i++) {
 		void *line_data = lines[i].data;
 		if (line_data != NULL) {
 			if (lines[i].type == CODE) {
