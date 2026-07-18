@@ -433,6 +433,7 @@ uint32_t rrx(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, uns
 		return 0;
 	}
 
+	// TODO: create a more robust instruction-building system for pseudo-instructions
 	struct InstructionBlock *old_blocks = i->blocks;
 	i->blocks = malloc(3 * sizeof (struct InstructionBlock));
 	for (int ibi = 0; ibi < 2; ibi++) {
@@ -711,7 +712,7 @@ int main(int argc, char **argv) {
 
 			if (lines[line_num].type == CODE) {
 				Inst *inst = malloc(sizeof *inst);
-				inst->line = &(lines[line_num]); // FIXME FIXME FIXME FIXME FIXME FIXME: when the lines array gets reallocated, this pointer may no longer point to the spot in the array and be in invalid space. VERY BAD .-.
+				inst->line = &(lines[line_num]);
 				inst->blocks = malloc(count_blocks * sizeof (struct InstructionBlock));
 				for (int i = 0; i < count_blocks; i++) {
 					inst->blocks[i] = blocks[i];
@@ -730,6 +731,12 @@ int main(int argc, char **argv) {
 				if (++line_num + 1 == lines_arr_size) {
 					lines_arr_size *= 2;
 					lines = realloc(lines, lines_arr_size * sizeof *lines);
+
+					for (unsigned long i = 0; i < line_num; i++) {
+						if (lines[i].data != NULL) {
+							((Inst *)(lines[i].data))->line = &(lines[i]);
+						}
+					}
 				}
 
 				c = skipWhitespace(c + 1) - 1;
