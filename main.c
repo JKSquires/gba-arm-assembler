@@ -296,7 +296,21 @@ uint32_t imm24(uint32_t s, uint32_t d, Inst *i) {
 	return val & 0x00FFFFFF;
 }
 
+uint32_t handleShift(uint8_t oprnd_i, Inst *i);
+uint32_t rdRnOprnd2(char *oprnd1_start, Inst *i);
 uint32_t shiftPseudoInst(char *oprnd1_start, enum BlockType type, Inst *i);
+
+uint32_t adc(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
+	return 0x00A00000 | rdRnOprnd2(oprnd1_start, i);
+}
+
+uint32_t add(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
+	return 0x00800000 | rdRnOprnd2(oprnd1_start, i);
+}
+
+uint32_t and(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
+	return 0x00000000 | rdRnOprnd2(oprnd1_start, i);
+}
 
 uint32_t asr(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
 	return shiftPseudoInst(oprnd1_start, ASR, i);
@@ -323,6 +337,10 @@ uint32_t b(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsig
 	return encoding;
 }
 
+uint32_t bic(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
+	return 0x01C00000 | rdRnOprnd2(oprnd1_start, i);
+}
+
 uint32_t bl(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
 	return b(inst_offset, oprnd1_start, labels, label_tot, i) | (1 << 24);
 }
@@ -332,13 +350,16 @@ uint32_t bx(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsi
 
 	uint8_t reg_data = readReg(oprnd1_start, 1, false, i);
 
-	if (reg_data & REG_READ_ERR) {
+	if (reg_data & REG_READ_ERR)
 		return 0;
-	}
 
 	encoding |= reg_data & 0xF;
 
 	return encoding;
+}
+
+uint32_t eor(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
+	return 0x00200000 | rdRnOprnd2(oprnd1_start, i);
 }
 
 uint32_t lsl(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
@@ -354,9 +375,8 @@ uint32_t mov(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, uns
 
 	uint8_t d_reg_data = readReg(oprnd1_start, 1, false, i);
 
-	if (d_reg_data & REG_READ_ERR) {
+	if (d_reg_data & REG_READ_ERR)
 		return 0;
-	}
 
 	encoding |= (d_reg_data & 0xF) << 12;
 
@@ -368,62 +388,24 @@ uint32_t mov(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, uns
 
 	if (i->blocks[1].type & REG) {
 		uint8_t m_reg_data = readReg(i->blocks[1].start, 2, false, i);
-		if (m_reg_data & REG_READ_ERR) {
+		if (m_reg_data & REG_READ_ERR)
 			return 0;
-		}
 
 		encoding |= m_reg_data & 0xF;
 
 		if (i->block_count >= 3) {
-			if (i->blocks[2].type & SHIFT) {
-				encoding |= (i->blocks[2].type & BLOCK_TYPE_SHIFT_MASK) & 0x7F;
-
-				if ((i->blocks[2].type & BLOCK_TYPE_SHIFT_MASK) != RRX) {
-					char *val_start = i->blocks[2].start;
-					for (; val_start < i->blocks[2].start + 4 && *val_start != '\n' && *val_start != ';'; val_start++);
-					val_start = skipWhitespace(val_start);
-
-					switch (i->blocks[2].type & BLOCK_TYPE_MASK) {
-						case IMM:
-							uint32_t constant = readConst(val_start, i);
-							if (constant > 32) {
-								printf("Move shift must be between 0 and 32 inclusive: ");
-								encodingIssue(i);
-							}
-							encoding |= (constant & 0x1F) << 7;
-
-							break;
-						case REG:
-							encoding |= 1 << 4;
-
-							uint8_t reg = readReg(val_start, 3, false, i);
-							if (reg & REG_READ_ERR) {
-								return 0;
-							}
-
-							encoding |= (reg & 0xF) << 8;
-
-							break;
-					}
-				}
-			} else {
-				printf("Expected shift in third operand: ");
-				encodingIssue(i);
-			}
+			encoding |= handleShift(2, i);
 		}
 	} else {
-		if (i->block_count >= 3 && (i->blocks[2].type & SHIFT)) {
-			printf("Move with shift cannot be done with immediate: ");
-			encodingIssue(i);
-		}
-
-		encoding |= 1 << 25;
-
 		uint32_t constant = readConst(i->blocks[1].start, i);
 		uint16_t imm = imm12(constant, i);
-		printf("CONST(0x%x)IMM(0x%x)\n", constant, imm);
 
-		encoding |= imm & 0xFFF;
+		encoding |= (1 << 25) | (imm & 0xFFF);
+
+		if (i->block_count >= 3 && (i->blocks[2].type & SHIFT)) {
+			printf("Move with shift cannot be done to immediate: ");
+			encodingIssue(i);
+		}
 	}
 
 	if (i->block_count > 3) {
@@ -436,6 +418,10 @@ uint32_t mov(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, uns
 
 uint32_t nop(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
 	return 0x00000000;
+}
+
+uint32_t orr(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
+	return 0x01800000 | rdRnOprnd2(oprnd1_start, i);
 }
 
 uint32_t ror(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
@@ -462,11 +448,109 @@ uint32_t rrx(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, uns
 	return shiftPseudoInst(oprnd1_start, RRX, i);
 }
 
+uint32_t rsb(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
+	return 0x00600000 | rdRnOprnd2(oprnd1_start, i);
+}
+
+uint32_t rsc(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
+	return 0x00E00000 | rdRnOprnd2(oprnd1_start, i);
+}
+
+uint32_t sbc(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
+	return 0x00C00000 | rdRnOprnd2(oprnd1_start, i);
+}
+
+uint32_t sub(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
+	return 0x00400000 | rdRnOprnd2(oprnd1_start, i);
+}
+
 uint32_t unsupportedInstruction(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
 	printf("Unsupported instruction: ");
 	encodingIssue(i);
 
 	return 0;
+}
+
+uint32_t handleShift(uint8_t oprnd_i, Inst *i) {
+	uint32_t encoding = 0;
+
+	if (i->blocks[oprnd_i].type & SHIFT) {
+		encoding |= (i->blocks[oprnd_i].type & BLOCK_TYPE_SHIFT_MASK) & 0x7F;
+
+		if ((i->blocks[oprnd_i].type & BLOCK_TYPE_SHIFT_MASK) != RRX) {
+			char *val_start = i->blocks[oprnd_i].start;
+			for (; val_start < i->blocks[oprnd_i].start + 4 && *val_start != '\n' && *val_start != ';'; val_start++);
+			val_start = skipWhitespace(val_start);
+
+			switch (i->blocks[oprnd_i].type & BLOCK_TYPE_MASK) {
+				case IMM:
+					uint32_t constant = readConst(val_start, i);
+					if (constant > 32) {
+						printf("Immediate shift must be between 0 and 32 inclusive: ");
+						encodingIssue(i);
+					}
+					encoding |= (constant & 0x1F) << 7;
+
+					break;
+				case REG:
+					uint8_t reg = readReg(val_start, oprnd_i + 1, false, i);
+					if (reg & REG_READ_ERR)
+						return 0;
+
+					encoding |= 1 << 4 | ((reg & 0xF) << 8);
+
+					break;
+			}
+		}
+	} else {
+		printf("Expected shift in operand %d: ", oprnd_i + 1);
+		encodingIssue(i);
+	}
+
+	return encoding;
+}
+
+uint32_t rdRnOprnd2(char *oprnd1_start, Inst *i) {
+	uint32_t encoding = 0;
+
+	if (i->block_count < 3) {
+		printf("Instruction requires 3 operands: ");
+		encodingIssue(i);
+		return 0;
+	}
+
+	uint8_t d_reg_data = readReg(oprnd1_start, 1, false, i);
+	if (d_reg_data & REG_READ_ERR)
+		return 0;
+	encoding |= (d_reg_data & 0xF) << 12;
+
+	uint8_t n_reg_data = readReg(i->blocks[1].start, 2, false, i);
+	if (n_reg_data & REG_READ_ERR)
+		return 0;
+	encoding |= (n_reg_data & 0xF) << 16;
+
+	if (i->blocks[2].type & REG) {
+		uint8_t m_reg_data = readReg(i->blocks[2].start, 3, false, i);
+		if (m_reg_data & REG_READ_ERR)
+			return 0;
+		encoding |= m_reg_data & 0xF;
+
+		if (i->block_count >= 4) {
+			encoding |= handleShift(3, i);
+		}
+	} else {
+		uint32_t constant = readConst(i->blocks[2].start, i);
+		uint16_t imm = imm12(constant, i);
+
+		encoding |= (1 << 25) | (imm & 0xFFF);
+
+		if (i->block_count >= 4 && (i->blocks[3].type & SHIFT)) {
+			printf("Shift cannot be done to immediate: ");
+			encodingIssue(i);
+		}
+	}
+
+	return encoding;
 }
 
 uint32_t shiftPseudoInst(char *oprnd1_start, enum BlockType type, Inst *i) {
@@ -486,24 +570,24 @@ InstEncoding *createEncodings() {
 	InstEncoding *encodings = malloc(ENCODINGS_COUNT * sizeof *encodings);
 
 	// maybe instead of one function for each, find patterns like (Rd, Rn, <Oprnd2>), (imm24), (Rt, [Rn, +/- Rm{, <shift>}]{!}), etc. and make functions for those?
-	encodings[0] =	(InstEncoding){unsupportedInstruction,	"adc",		3,	SET_FLAGS};
-	encodings[1] =	(InstEncoding){unsupportedInstruction,	"add",		3,	SET_FLAGS};
+	encodings[0] =	(InstEncoding){adc,						"adc",		3,	SET_FLAGS};
+	encodings[1] =	(InstEncoding){add,						"add",		3,	SET_FLAGS};
 	encodings[2] =	(InstEncoding){unsupportedInstruction,	"addr",		4,	COND_ONLY};
 	encodings[3] =	(InstEncoding){unsupportedInstruction,	"adr",		3,	COND_ONLY};
 	encodings[4] =	(InstEncoding){unsupportedInstruction,	"adrl",		4,	COND_ONLY};
-	encodings[5] =	(InstEncoding){unsupportedInstruction,	"and",		3,	SET_FLAGS};
-	encodings[6] =	(InstEncoding){asr,						"asr",		3,	SET_FLAGS}; // TODO: now that MOV is implemented, implementation should be easier now
+	encodings[5] =	(InstEncoding){and,						"and",		3,	SET_FLAGS};
+	encodings[6] =	(InstEncoding){asr,						"asr",		3,	SET_FLAGS};
 	encodings[7] =	(InstEncoding){b,						"b",		1,	COND_ONLY};
-	encodings[8] =	(InstEncoding){unsupportedInstruction,	"bic",		3,	SET_FLAGS};
+	encodings[8] =	(InstEncoding){bic,						"bic",		3,	SET_FLAGS};
 	encodings[9] =	(InstEncoding){bl,						"bl",		2,	COND_ONLY};
 	encodings[10] =	(InstEncoding){bx,						"bx",		2,	COND_ONLY};
 	encodings[11] =	(InstEncoding){unsupportedInstruction,	"cmn",		3,	COND_ONLY};
 	encodings[12] =	(InstEncoding){unsupportedInstruction,	"cmp",		3,	COND_ONLY};
-	encodings[13] =	(InstEncoding){unsupportedInstruction,	"eor",		3,	SET_FLAGS};
+	encodings[13] =	(InstEncoding){eor,						"eor",		3,	SET_FLAGS};
 	encodings[14] =	(InstEncoding){unsupportedInstruction,	"ldm",		3,	ADDRESSING_MODE};
 	encodings[15] =	(InstEncoding){unsupportedInstruction,	"ldr",		3,	DATA_SIZE};
-	encodings[16] =	(InstEncoding){lsl,						"lsl",		3,	SET_FLAGS}; // TODO: now that MOV is implemented, implementation should be easier now
-	encodings[17] =	(InstEncoding){lsr,						"lsr",		3,	SET_FLAGS}; // TODO: now that MOV is implemented, implementation should be easier now
+	encodings[16] =	(InstEncoding){lsl,						"lsl",		3,	SET_FLAGS};
+	encodings[17] =	(InstEncoding){lsr,						"lsr",		3,	SET_FLAGS};
 	encodings[18] =	(InstEncoding){unsupportedInstruction,	"mla",		3,	SET_FLAGS};
 	encodings[19] =	(InstEncoding){mov,						"mov",		3,	SET_FLAGS};
 	encodings[20] =	(InstEncoding){unsupportedInstruction,	"mrs",		3,	COND_ONLY};
@@ -512,19 +596,19 @@ InstEncoding *createEncodings() {
 	encodings[23] =	(InstEncoding){unsupportedInstruction,	"mvn",		3,	SET_FLAGS};
 	encodings[24] =	(InstEncoding){unsupportedInstruction,	"neg",		3,	COND_ONLY};
 	encodings[25] =	(InstEncoding){nop,						"nop",		3,	NOP};
-	encodings[26] =	(InstEncoding){unsupportedInstruction,	"orr",		3,	SET_FLAGS};
+	encodings[26] =	(InstEncoding){orr,						"orr",		3,	SET_FLAGS};
 	encodings[27] =	(InstEncoding){unsupportedInstruction,	"pop",		3,	COND_ONLY};
 	encodings[28] =	(InstEncoding){unsupportedInstruction,	"push",		4,	COND_ONLY};
-	encodings[29] =	(InstEncoding){ror,						"ror",		3,	SET_FLAGS}; // TODO: now that MOV is implemented, implementation should be easier now
-	encodings[30] =	(InstEncoding){rrx,						"rrx",		3,	SET_FLAGS}; // TODO: now that MOV is implemented, implementation should be easier now
-	encodings[31] =	(InstEncoding){unsupportedInstruction,	"rsb",		3,	SET_FLAGS};
-	encodings[32] =	(InstEncoding){unsupportedInstruction,	"rsc",		3,	SET_FLAGS};
-	encodings[33] =	(InstEncoding){unsupportedInstruction,	"sbc",		3,	SET_FLAGS};
+	encodings[29] =	(InstEncoding){ror,						"ror",		3,	SET_FLAGS};
+	encodings[30] =	(InstEncoding){rrx,						"rrx",		3,	SET_FLAGS};
+	encodings[31] =	(InstEncoding){rsb,						"rsb",		3,	SET_FLAGS};
+	encodings[32] =	(InstEncoding){rsc,						"rsc",		3,	SET_FLAGS};
+	encodings[33] =	(InstEncoding){sbc,						"sbc",		3,	SET_FLAGS};
 	encodings[34] =	(InstEncoding){unsupportedInstruction,	"smlal",	5,	SET_FLAGS};
 	encodings[35] =	(InstEncoding){unsupportedInstruction,	"smull",	5,	SET_FLAGS};
 	encodings[36] =	(InstEncoding){unsupportedInstruction,	"stm",		3,	ADDRESSING_MODE};
 	encodings[37] =	(InstEncoding){unsupportedInstruction,	"str",		3,	DATA_SIZE};
-	encodings[38] =	(InstEncoding){unsupportedInstruction,	"sub",		3,	SET_FLAGS};
+	encodings[38] =	(InstEncoding){sub,						"sub",		3,	SET_FLAGS};
 	encodings[39] =	(InstEncoding){unsupportedInstruction,	"swi",		3,	COND_ONLY};
 	encodings[40] =	(InstEncoding){unsupportedInstruction,	"swp",		3,	COND_ONLY};
 	encodings[41] =	(InstEncoding){unsupportedInstruction,	"teq",		3,	COND_ONLY};
@@ -662,7 +746,7 @@ int main(int argc, char **argv) {
 		}
 
 		if (!comment) {
-			printf("<%c>", *c); // TODO: remove debug line
+			//printf("<%c>", *c); // TODO: remove debug line
 
 			switch (*c) {
 				case '@':
@@ -968,14 +1052,14 @@ int main(int argc, char **argv) {
 
 							switch (success_encoding->suffix) {
 								case SET_FLAGS:
-									printf("Instruction detected to set flags\n");
+									printf("Instruction detected with possible set flags\n");
 
 									encoding |= (last_two[1] == 's') << 20;
 
 									break;
 								case DATA_SIZE: // FIXME: when encoding ldr and sdr in previous section, note that ldr has bit 20 set and str has bit 20 cleared. this means that we should probably not mask that bit in this section--review
 									// TODO: bits 21, 23, and 24 will need to be set later accordingly
-									printf("Instruction detected with data size ");
+									printf("Instruction detected with possible data size ");
 
 									switch (last_two[1]) {
 										case 'b':
@@ -1018,6 +1102,8 @@ int main(int argc, char **argv) {
 
 									break;
 								case ADDRESSING_MODE: // FIXME: when encoding ldm and sdm in previous section, note that ldm has bit 20 set and stm has bit 20 cleared. this means that we should probably not mask that bit in this section--review
+									printf("Instruction detected with possible addressing mode");
+
 									// TODO: bit 21 is wback, will need to set later if needed for the specific instruction based on operands
 									encoding = (encoding & 0xF02FFFFF) | (1 << 27);
 
