@@ -295,7 +295,7 @@ uint32_t imm24(uint32_t s, uint32_t d, Inst *i) {
 
 uint32_t handleShift(uint8_t oprnd_i, Inst *i);
 uint32_t rdRnOprnd2(char *oprnd1_start, Inst *i);
-uint32_t rxOprnd2(char *oprnd1_start, Inst *i);
+uint32_t rxOprnd2(char *oprnd1_start, bool rx_is_rn, Inst *i);
 uint32_t shiftPseudoInst(char *oprnd1_start, enum BlockType type, Inst *i);
 
 uint32_t adc(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
@@ -369,11 +369,11 @@ uint32_t lsr(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, uns
 }
 
 uint32_t mov(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
-	return 0x01A00000 | rxOprnd2(oprnd1_start, i);
+	return 0x01A00000 | rxOprnd2(oprnd1_start, false, i);
 }
 
 uint32_t mvn(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
-	return 0x01E00000 | rxOprnd2(oprnd1_start, i);
+	return 0x01E00000 | rxOprnd2(oprnd1_start, false, i);
 }
 
 uint32_t nop(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
@@ -423,6 +423,14 @@ uint32_t sbc(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, uns
 
 uint32_t sub(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
 	return 0x00400000 | rdRnOprnd2(oprnd1_start, i);
+}
+
+uint32_t teq(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
+	return 0x01300000 | rxOprnd2(oprnd1_start, true, i);
+}
+
+uint32_t tst(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
+	return 0x01100000 | rxOprnd2(oprnd1_start, true, i);
 }
 
 uint32_t unsupportedInstruction(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
@@ -514,7 +522,7 @@ uint32_t rdRnOprnd2(char *oprnd1_start, Inst *i) {
 	return encoding;
 }
 
-uint32_t rxOprnd2(char *oprnd1_start, Inst *i) {
+uint32_t rxOprnd2(char *oprnd1_start, bool rx_is_rn, Inst *i) {
 	uint32_t encoding = 0;
 
 	if (i->block_count < 2) {
@@ -527,7 +535,7 @@ uint32_t rxOprnd2(char *oprnd1_start, Inst *i) {
 	if (reg1_data & REG_READ_ERR)
 		return 0;
 
-	encoding |= (reg1_data & 0xF) << 12;
+	encoding |= (reg1_data & 0xF) << (12 + (4 * rx_is_rn));
 
 	if (i->blocks[1].type & REG) {
 		uint8_t reg2_data = readReg(i->blocks[1].start, 2, false, i);
@@ -612,8 +620,8 @@ InstEncoding *createEncodings() {
 	encodings[38] =	(InstEncoding){sub,						"sub",		3,	SET_FLAGS};
 	encodings[39] =	(InstEncoding){unsupportedInstruction,	"swi",		3,	COND_ONLY};
 	encodings[40] =	(InstEncoding){unsupportedInstruction,	"swp",		3,	COND_ONLY};
-	encodings[41] =	(InstEncoding){unsupportedInstruction,	"teq",		3,	COND_ONLY};
-	encodings[42] =	(InstEncoding){unsupportedInstruction,	"tst",		3,	COND_ONLY};
+	encodings[41] =	(InstEncoding){teq,						"teq",		3,	COND_ONLY};
+	encodings[42] =	(InstEncoding){tst,						"tst",		3,	COND_ONLY};
 	encodings[43] =	(InstEncoding){unsupportedInstruction,	"und",		3,	COND_ONLY};
 	encodings[44] =	(InstEncoding){unsupportedInstruction,	"umlal",	5,	SET_FLAGS};
 	encodings[45] =	(InstEncoding){unsupportedInstruction,	"umull",	5,	SET_FLAGS};
