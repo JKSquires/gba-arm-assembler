@@ -356,6 +356,14 @@ uint32_t bx(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsi
 	return encoding;
 }
 
+uint32_t cmn(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
+	return 0x01700000 | rxOprnd2(oprnd1_start, true, i);
+}
+
+uint32_t cmp(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
+	return 0x01500000 | rxOprnd2(oprnd1_start, true, i);
+}
+
 uint32_t eor(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
 	return 0x00200000 | rdRnOprnd2(oprnd1_start, i);
 }
@@ -590,8 +598,8 @@ InstEncoding *createEncodings() {
 	encodings[8] =	(InstEncoding){bic,						"bic",		3,	SET_FLAGS};
 	encodings[9] =	(InstEncoding){bl,						"bl",		2,	COND_ONLY};
 	encodings[10] =	(InstEncoding){bx,						"bx",		2,	COND_ONLY};
-	encodings[11] =	(InstEncoding){unsupportedInstruction,	"cmn",		3,	COND_ONLY};
-	encodings[12] =	(InstEncoding){unsupportedInstruction,	"cmp",		3,	COND_ONLY};
+	encodings[11] =	(InstEncoding){cmn,						"cmn",		3,	COND_ONLY};
+	encodings[12] =	(InstEncoding){cmp,						"cmp",		3,	COND_ONLY};
 	encodings[13] =	(InstEncoding){eor,						"eor",		3,	SET_FLAGS};
 	encodings[14] =	(InstEncoding){unsupportedInstruction,	"ldm",		3,	ADDRESSING_MODE};
 	encodings[15] =	(InstEncoding){unsupportedInstruction,	"ldr",		3,	DATA_SIZE};

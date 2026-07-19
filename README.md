@@ -35,6 +35,8 @@ Branch | `b{<cond>} <label>` | `b start`
 Bitwise Bit Clear | `bic{<cond>}{s} <Rd>, <Rn>, <oprnd2> {, <shift>}` | `bic r0, r0, r1` / `bic r3, r12, #127` / `bic r2, r3, r4, asr r5`
 Branch with Link | `bl{<cond>} <label>` | `bl div`
 Branch and Exchange | `bx{<cond>} <Rm>` | `bx r14`
+Compare Negative | `cmn{<cond>}{s} <Rn>, <oprnd2> {, <shift>}` | `cmn r0, r2` / `cmn r8,$6000000` / `cmneq r5, r3, lsr #3`
+Compare | `cmp{<cond>}{s} <Rn>, <oprnd2> {, <shift>}` | `cmp r0, r2` / `cmp r8,$6000000` / `cmpeq r5, r3, lsr #3`
 Bitwise Exclusive Or | `eor{<cond>}{s} <Rd>, <Rn>, <oprnd2> {, <shift>}` | `eor r0, r0, r1` / `eor r3, r12, #127` / `eor r2, r3, r4, asr r5`
 Move | `mov{<cond>}{s} <Rd>, <oprnd2> {, <shift>}` | `mov r0, r2` / `mov r8,$6000000` / `moveqs r5, r3, lsr #3`
 Move Not | `mvn{<cond>}{s} <Rd>, <oprnd2> {, <shift>}` | `mvn r0, r2` / `mvn r8,$6000000` / `mvneqs r5, r3, lsr #3`
