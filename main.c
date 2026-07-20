@@ -293,10 +293,12 @@ uint32_t imm24(uint32_t s, uint32_t d, Inst *i) {
 	return val & 0x00FFFFFF;
 }
 
-uint32_t handleShift(uint8_t oprnd_i, Inst *i);
-uint32_t rdRnOprnd2(char *oprnd1_start, Inst *i);
-uint32_t rxOprnd2(char *oprnd1_start, bool rx_is_rn, Inst *i);
-uint32_t shiftPseudoInst(char *oprnd1_start, enum BlockType type, Inst *i);
+uint32_t handleShift(uint8_t, Inst *);
+uint32_t rdRnOprnd2(char *, Inst *);
+uint32_t rdRnRm(char *, Inst *);
+uint32_t rxOprnd2(char *, bool, Inst *);
+uint32_t rxRxRxRx(char *, bool, Inst *);
+uint32_t shiftPseudoInst(char *, enum BlockType, Inst *);
 
 uint32_t adc(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
 	return 0x00A00000 | rdRnOprnd2(oprnd1_start, i);
@@ -376,8 +378,16 @@ uint32_t lsr(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, uns
 	return shiftPseudoInst(oprnd1_start, LSR, i);
 }
 
+uint32_t mla(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
+	return 0x00200090 | rxRxRxRx(oprnd1_start, false, i);
+}
+
 uint32_t mov(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
 	return 0x01A00000 | rxOprnd2(oprnd1_start, false, i);
+}
+
+uint32_t mul(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
+	return 0x00000090 | rdRnRm(oprnd1_start, i);
 }
 
 uint32_t mvn(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
@@ -429,6 +439,14 @@ uint32_t sbc(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, uns
 	return 0x00C00000 | rdRnOprnd2(oprnd1_start, i);
 }
 
+uint32_t smlal(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
+	return 0x00E00090 | rxRxRxRx(oprnd1_start, true, i);
+}
+
+uint32_t smull(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
+	return 0x00C00090 | rxRxRxRx(oprnd1_start, true, i);
+}
+
 uint32_t sub(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
 	return 0x00400000 | rdRnOprnd2(oprnd1_start, i);
 }
@@ -439,6 +457,14 @@ uint32_t teq(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, uns
 
 uint32_t tst(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
 	return 0x01100000 | rxOprnd2(oprnd1_start, true, i);
+}
+
+uint32_t umlal(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
+	return 0x00A00090 | rxRxRxRx(oprnd1_start, true, i);
+}
+
+uint32_t umull(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
+	return 0x00800090 | rxRxRxRx(oprnd1_start, true, i);
 }
 
 uint32_t unsupportedInstruction(uint32_t inst_offset, char *oprnd1_start, struct Label *labels, unsigned long label_tot, Inst *i) {
@@ -530,6 +556,33 @@ uint32_t rdRnOprnd2(char *oprnd1_start, Inst *i) {
 	return encoding;
 }
 
+uint32_t rdRnRm(char *oprnd1_start, Inst *i) {
+	uint32_t encoding = 0;
+
+	if (i->block_count != 3) {
+		printf("Instruction requires 3 operands: ");
+		encodingIssue(i);
+		return 0;
+	}
+
+	uint8_t d_reg_data = readReg(oprnd1_start, 1, false, i);
+	if (d_reg_data & REG_READ_ERR)
+		return 0;
+	encoding |= (d_reg_data & 0xF) << 16;
+
+	uint8_t n_reg_data = readReg(i->blocks[1].start, 2, false, i);
+	if (n_reg_data & REG_READ_ERR)
+		return 0;
+	encoding |= n_reg_data & 0xF;
+
+	uint8_t m_reg_data = readReg(i->blocks[2].start, 3, false, i);
+	if (m_reg_data & REG_READ_ERR)
+		return 0;
+	encoding |= (m_reg_data & 0xF) << 8;
+
+	return encoding;
+}
+
 uint32_t rxOprnd2(char *oprnd1_start, bool rx_is_rn, Inst *i) {
 	uint32_t encoding = 0;
 
@@ -570,6 +623,38 @@ uint32_t rxOprnd2(char *oprnd1_start, bool rx_is_rn, Inst *i) {
 	return encoding;
 }
 
+uint32_t rxRxRxRx(char *oprnd1_start, bool is_long, Inst *i) {
+	uint32_t encoding = 0;
+
+	if (i->block_count != 4) {
+		printf("Instruction requires 4 operands: ");
+		encodingIssue(i);
+		return 0;
+	}
+
+	uint8_t reg1_data = readReg(oprnd1_start, 1, false, i);
+	if (reg1_data & REG_READ_ERR)
+		return 0;
+	encoding |= (reg1_data & 0xF) << (16 - (4 * is_long));
+
+	uint8_t reg2_data = readReg(i->blocks[1].start, 2, false, i);
+	if (reg2_data & REG_READ_ERR)
+		return 0;
+	encoding |= (reg2_data & 0xF) << (16 * is_long);
+
+	uint8_t reg3_data = readReg(i->blocks[2].start, 3, false, i);
+	if (reg3_data & REG_READ_ERR)
+		return 0;
+	encoding |= (reg3_data & 0xF) << (8 * (!is_long));
+
+	uint8_t reg4_data = readReg(i->blocks[3].start, 4, false, i);
+	if (reg4_data & REG_READ_ERR)
+		return 0;
+	encoding |= (reg4_data & 0xF) << (12 - (4 * is_long));
+
+	return encoding;
+}
+
 uint32_t shiftPseudoInst(char *oprnd1_start, enum BlockType type, Inst *i) {
 	if (i->block_count < 3 || i->blocks[1].type != REG || !(i->blocks[2].type == IMM || i->blocks[2].type == REG)) {
 		printf("Bit shift pseudo instruction is formatted incorrectly: ");
@@ -605,11 +690,11 @@ InstEncoding *createEncodings() {
 	encodings[15] =	(InstEncoding){unsupportedInstruction,	"ldr",		3,	DATA_SIZE};
 	encodings[16] =	(InstEncoding){lsl,						"lsl",		3,	SET_FLAGS};
 	encodings[17] =	(InstEncoding){lsr,						"lsr",		3,	SET_FLAGS};
-	encodings[18] =	(InstEncoding){unsupportedInstruction,	"mla",		3,	SET_FLAGS};
+	encodings[18] =	(InstEncoding){mla,						"mla",		3,	SET_FLAGS};
 	encodings[19] =	(InstEncoding){mov,						"mov",		3,	SET_FLAGS};
 	encodings[20] =	(InstEncoding){unsupportedInstruction,	"mrs",		3,	COND_ONLY};
 	encodings[21] =	(InstEncoding){unsupportedInstruction,	"msr",		3,	COND_ONLY};
-	encodings[22] =	(InstEncoding){unsupportedInstruction,	"mul",		3,	SET_FLAGS};
+	encodings[22] =	(InstEncoding){mul,						"mul",		3,	SET_FLAGS};
 	encodings[23] =	(InstEncoding){mvn,						"mvn",		3,	SET_FLAGS};
 	encodings[24] =	(InstEncoding){unsupportedInstruction,	"neg",		3,	COND_ONLY};
 	encodings[25] =	(InstEncoding){nop,						"nop",		3,	NOP};
@@ -621,8 +706,8 @@ InstEncoding *createEncodings() {
 	encodings[31] =	(InstEncoding){rsb,						"rsb",		3,	SET_FLAGS};
 	encodings[32] =	(InstEncoding){rsc,						"rsc",		3,	SET_FLAGS};
 	encodings[33] =	(InstEncoding){sbc,						"sbc",		3,	SET_FLAGS};
-	encodings[34] =	(InstEncoding){unsupportedInstruction,	"smlal",	5,	SET_FLAGS};
-	encodings[35] =	(InstEncoding){unsupportedInstruction,	"smull",	5,	SET_FLAGS};
+	encodings[34] =	(InstEncoding){smlal,					"smlal",	5,	SET_FLAGS};
+	encodings[35] =	(InstEncoding){smull,					"smull",	5,	SET_FLAGS};
 	encodings[36] =	(InstEncoding){unsupportedInstruction,	"stm",		3,	ADDRESSING_MODE};
 	encodings[37] =	(InstEncoding){unsupportedInstruction,	"str",		3,	DATA_SIZE};
 	encodings[38] =	(InstEncoding){sub,						"sub",		3,	SET_FLAGS};
@@ -631,8 +716,8 @@ InstEncoding *createEncodings() {
 	encodings[41] =	(InstEncoding){teq,						"teq",		3,	COND_ONLY};
 	encodings[42] =	(InstEncoding){tst,						"tst",		3,	COND_ONLY};
 	encodings[43] =	(InstEncoding){unsupportedInstruction,	"und",		3,	COND_ONLY};
-	encodings[44] =	(InstEncoding){unsupportedInstruction,	"umlal",	5,	SET_FLAGS};
-	encodings[45] =	(InstEncoding){unsupportedInstruction,	"umull",	5,	SET_FLAGS};
+	encodings[44] =	(InstEncoding){umlal,					"umlal",	5,	SET_FLAGS};
+	encodings[45] =	(InstEncoding){umull,					"umull",	5,	SET_FLAGS};
 
 	return encodings;
 }
