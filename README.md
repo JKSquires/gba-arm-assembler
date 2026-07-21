@@ -49,6 +49,7 @@ Subtract with Carry | `sbc{<cond>}{s} <Rd>, <Rn>, <oprnd2> {, <shift>}` | `sbc r
 Signed Multiply Accumulate Long | `umlal{<cond>}{s} <RdLo>, <RdHi>, <Rn>, <Rm>` | `umlal r0, r1, r5, r8`
 Signed Multiply Long | `umull{<cond>}{s} <RdLo>, <RdHi>, <Rn>, <Rm>` | `umull r0, r1, r5, r8`
 Subtract | `sub{<cond>}{s} <Rd>, <Rn>, <oprnd2> {, <shift>}` | `sub r0, r0, r1` / `sub r3, r12, #127` / `sub r2, r3, r4, asr r5`
+Software Interrupt | `swi{<cond>} <imm24>` | `swi $250000`
 Test Equivalence | `teq{<cond>}{s} <Rn>, <oprnd2> {, <shift>}` | `teq r0, r2` / `teq r8,$6000000` / `teqeq r5, r3, lsr #3`
 Test | `tst{<cond>}{s} <Rn>, <oprnd2> {, <shift>}` | `tst r0, r2` / `tst r8,$6000000` / `tsteq r5, r3, lsr #3`
 Unsigned Multiply Accumulate Long | `umlal{<cond>}{s} <RdLo>, <RdHi>, <Rn>, <Rm>` | `umlal r0, r1, r5, r8`

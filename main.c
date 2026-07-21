@@ -53,6 +53,7 @@ enum InstructionSuffix {
 	SET_FLAGS,
 	DATA_SIZE,
 	ADDRESSING_MODE,
+	BYTE_SIZE,
 	NOP,
 };
 
@@ -192,16 +193,12 @@ void lineIssue(struct Line *line) {
 	printf("\n");
 }
 
-void encodingIssue(Inst *i) { // FIXME: do we really need this anymore, maybe just refactor calls
-	lineIssue(i->line);
-}
-
 uint8_t readReg(char *reg, uint8_t oprnd_num, bool support_writeback, Inst *i) {
 	uint8_t data = 0;
 
 	if (*reg != 'r') {
 		printf("Issue reading register: ");
-		encodingIssue(i);
+		lineIssue(i->line);
 
 		return REG_READ_ERR;
 	}
@@ -218,7 +215,7 @@ uint8_t readReg(char *reg, uint8_t oprnd_num, bool support_writeback, Inst *i) {
 
 		if (!support_writeback) {
 			printf("Instruction does not support writeback in operand %d: ", oprnd_num);
-			encodingIssue(i);
+			lineIssue(i->line);
 		}
 	}
 
@@ -249,7 +246,7 @@ uint32_t readConst(char *constant, Inst *i) {
 						data = data * 10 + (*c - '0');
 					} else {
 						printf("Broken decimal literal: ");
-						encodingIssue(i);
+						lineIssue(i->line);
 					}
 					break;
 				case BIN:
@@ -257,14 +254,14 @@ uint32_t readConst(char *constant, Inst *i) {
 						data = (data << 1) + (*c - '0');
 					} else {
 						printf("Broken binary literal: ");
-						encodingIssue(i);
+						lineIssue(i->line);
 					}
 					break;
 			}
 		}
 	} else {
 		printf("Issue reading constant/immediate value: ");
-		encodingIssue(i);
+		lineIssue(i->line);
 	}
 
 	return data;
@@ -280,19 +277,8 @@ uint16_t imm12(uint32_t val, Inst *i) {
 	}
 
 	printf("Cannot create rotation for 12-bit immediate: ");
-	encodingIssue(i);
+	lineIssue(i->line);
 	return 0;
-}
-
-uint32_t imm24(uint32_t s, uint32_t d, Inst *i) {
-	uint32_t val = (d - (s + 8)) >> 2;
-
-	if (val > 0x00FFFFFF && val < 0x3F000000) { // TODO: make sure these bounds are correct
-		printf("Issue creating 24-bit immediate: ");
-		encodingIssue(i);
-	}
-
-	return val & 0x00FFFFFF;
 }
 
 uint32_t handleShift(uint8_t oprnd_i, Inst *i) {
@@ -311,7 +297,7 @@ uint32_t handleShift(uint8_t oprnd_i, Inst *i) {
 					uint32_t constant = readConst(val_start, i);
 					if (constant > 32) {
 						printf("Bit shift by immediate must be between 0 and 32 inclusive: ");
-						encodingIssue(i);
+						lineIssue(i->line);
 					}
 					encoding |= (constant & 0x1F) << 7;
 
@@ -328,7 +314,7 @@ uint32_t handleShift(uint8_t oprnd_i, Inst *i) {
 		}
 	} else {
 		printf("Expected bit shift in operand %d: ", oprnd_i + 1);
-		encodingIssue(i);
+		lineIssue(i->line);
 	}
 
 	return encoding;
@@ -339,7 +325,7 @@ uint32_t rdRnOprnd2(uint32_t, char *oprnd1_start, bool, struct Label *, unsigned
 
 	if (i->block_count < 3) {
 		printf("Instruction requires at least 3 operands: ");
-		encodingIssue(i);
+		lineIssue(i->line);
 		return 0;
 	}
 
@@ -370,7 +356,7 @@ uint32_t rdRnOprnd2(uint32_t, char *oprnd1_start, bool, struct Label *, unsigned
 
 		if (i->block_count >= 4 && (i->blocks[3].type & SHIFT)) {
 			printf("Bit shift cannot be done to immediate: ");
-			encodingIssue(i);
+			lineIssue(i->line);
 		}
 	}
 
@@ -382,7 +368,7 @@ uint32_t rdRnRm(uint32_t, char *oprnd1_start, bool, struct Label *, unsigned lon
 
 	if (i->block_count != 3) {
 		printf("Instruction requires 3 operands: ");
-		encodingIssue(i);
+		lineIssue(i->line);
 		return 0;
 	}
 
@@ -409,7 +395,7 @@ uint32_t rxOprnd2(uint32_t, char *oprnd1_start, bool rx_is_rn, struct Label *, u
 
 	if (i->block_count < 2) {
 		printf("Instruction requires at least 2 operands: ");
-		encodingIssue(i);
+		lineIssue(i->line);
 		return 0;
 	}
 
@@ -437,7 +423,7 @@ uint32_t rxOprnd2(uint32_t, char *oprnd1_start, bool rx_is_rn, struct Label *, u
 
 		if (i->block_count >= 3 && (i->blocks[2].type & SHIFT)) {
 			printf("Bit shift cannot be done to immediate: ");
-			encodingIssue(i);
+			lineIssue(i->line);
 		}
 	}
 
@@ -449,7 +435,7 @@ uint32_t rxRxRxRx(uint32_t, char *oprnd1_start, bool is_long, struct Label *, un
 
 	if (i->block_count != 4) {
 		printf("Instruction requires 4 operands: ");
-		encodingIssue(i);
+		lineIssue(i->line);
 		return 0;
 	}
 
@@ -479,7 +465,7 @@ uint32_t rxRxRxRx(uint32_t, char *oprnd1_start, bool is_long, struct Label *, un
 uint32_t shiftPseudoInst(char *oprnd1_start, enum BlockType type, Inst *i) {
 	if (i->block_count < 3 || i->blocks[1].type != REG || !(i->blocks[2].type == IMM || i->blocks[2].type == REG)) {
 		printf("Bit shift pseudo instruction is formatted incorrectly: ");
-		encodingIssue(i);
+		lineIssue(i->line);
 		return 0;
 	}
 
@@ -502,14 +488,21 @@ uint32_t b(uint32_t inst_offset, char *oprnd1_start, bool, struct Label *labels,
 	unsigned long label_i = findLabel(oprnd1_start, inst_label_length, labels, label_tot);
 	if (label_i == label_tot) { // TODO: maybe someday we can support branching to a direct address (e.g. b $8000000)
 		printf("Cannot find label for branch: ");
-		encodingIssue(i);
+		lineIssue(i->line);
 
 		return 0;
 	}
 
 	uint32_t label_offset = labels[label_i].offset;
 
-	encoding |= imm24(inst_offset, label_offset, i);
+	uint32_t imm24 = (label_offset - (inst_offset + 8)) >> 2;
+
+	if (imm24 > 0x00FFFFFF && imm24 < 0x3F000000) { // TODO: make sure these bounds are correct
+		printf("Issue creating 24-bit immediate offset: ");
+		lineIssue(i->line);
+	}
+
+	encoding |= imm24 & 0x00FFFFFF;
 
 	return encoding;
 }
@@ -546,7 +539,7 @@ uint32_t ror(uint32_t, char *oprnd1_start, bool, struct Label *, unsigned long, 
 uint32_t rrx(uint32_t, char *oprnd1_start, bool, struct Label *, unsigned long, Inst *i) {
 	if (i->block_count < 2) {
 		printf("Rotate Right with Extend requires 2 operands: ");
-		encodingIssue(i);
+		lineIssue(i->line);
 		return 0;
 	}
 
@@ -564,9 +557,21 @@ uint32_t rrx(uint32_t, char *oprnd1_start, bool, struct Label *, unsigned long, 
 	return shiftPseudoInst(oprnd1_start, RRX, i);
 }
 
+uint32_t swi(uint32_t, char *oprnd1_start, bool, struct Label *, unsigned long, Inst *i) {
+	uint32_t imm24 = readConst(oprnd1_start, i);
+
+	if (imm24 > 0x00FFFFFF) {
+		printf("Software interrupt location is too large: ");
+		lineIssue(i->line);
+		return 0;
+	}
+
+	return imm24;
+}
+
 uint32_t unsupportedInstruction(uint32_t, char *, bool, struct Label *, unsigned long, Inst *i) {
 	printf("Unsupported instruction: ");
-	encodingIssue(i);
+	lineIssue(i->line);
 
 	return 0;
 }
@@ -574,7 +579,6 @@ uint32_t unsupportedInstruction(uint32_t, char *, bool, struct Label *, unsigned
 InstEncoding *createEncodings() {
 	InstEncoding *encodings = malloc(ENCODINGS_COUNT * sizeof *encodings);
 
-	// TODO: most (if not all) of these instruction encoding functions are following a pattern, maybe we can refactor this to work with that? Maybe we could store the encoding function (like `rxOprnd2`) and the opcode. When we call these, we or them there instead of in every single function
 	encodings[0] =	(InstEncoding){rdRnOprnd2,				"adc",		0x00A00000,	3,	false,	SET_FLAGS};
 	encodings[1] =	(InstEncoding){rdRnOprnd2,				"add",		0x00800000,	3,	false,	SET_FLAGS};
 	encodings[2] =	(InstEncoding){unsupportedInstruction,	"addr",		0x00000000,	4,	false,	COND_ONLY};
@@ -614,8 +618,8 @@ InstEncoding *createEncodings() {
 	encodings[36] =	(InstEncoding){unsupportedInstruction,	"stm",		0x00000000,	3,	false,	ADDRESSING_MODE};
 	encodings[37] =	(InstEncoding){unsupportedInstruction,	"str",		0x00000000,	3,	false,	DATA_SIZE};
 	encodings[38] =	(InstEncoding){rdRnOprnd2,				"sub",		0x00400000,	3,	false,	SET_FLAGS};
-	encodings[39] =	(InstEncoding){unsupportedInstruction,	"swi",		0x00000000,	3,	false,	COND_ONLY};
-	encodings[40] =	(InstEncoding){unsupportedInstruction,	"swp",		0x00000000,	3,	false,	COND_ONLY};
+	encodings[39] =	(InstEncoding){swi,						"swi",		0x0F000000,	3,	false,	COND_ONLY};
+	encodings[40] =	(InstEncoding){unsupportedInstruction,	"swp",		0x00000000,	3,	false,	BYTE_SIZE};
 	encodings[41] =	(InstEncoding){rxOprnd2,				"teq",		0x01300000,	3,	true,	COND_ONLY};
 	encodings[42] =	(InstEncoding){rxOprnd2,				"tst",		0x01100000,	3,	true,	COND_ONLY};
 	encodings[43] =	(InstEncoding){unsupportedInstruction,	"und",		0x00000000,	3,	false,	COND_ONLY};
@@ -1173,6 +1177,12 @@ int main(int argc, char **argv) {
 											}
 											break;
 									}
+									break;
+								case BYTE_SIZE:
+									printf("Instruction detected with possible byte data size\n");
+
+									encoding |= (last_two[1] == 'b') << 22;
+
 									break;
 							}
 						}
