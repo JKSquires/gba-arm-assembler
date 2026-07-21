@@ -122,7 +122,7 @@ struct InstructionEncoding {
 };
 
 struct Instruction {
-	struct Line *line; // TODO: refactor to better whay than a loop like this where lines have instructions which store the line etc...
+	struct Line *line; // TODO: refactor to better way than a loop like this where lines have instructions which store the line etc...
 	struct InstructionBlock *blocks;
 	uint8_t block_count;
 };
@@ -190,7 +190,7 @@ void lineIssue(struct Line *line) {
 	for (char *c = line->start; *c != '\n'; c++) {
 		printf("%c", *c);
 	}
-	printf("\n");
+	printf("\n\n");
 }
 
 uint8_t readReg(char *reg, uint8_t oprnd_num, bool support_writeback, Inst *i) {
@@ -967,7 +967,7 @@ int main(int argc, char **argv) {
 								if (c3[0] != '\n') c3[1] = getLowerChar(*(c + 1));
 								if (c3[1] != '\n') c3[2] = getLowerChar(*(c + 2));
 
-								printf("CHARS(%c)(%c)(%c)", c3[0], c3[1], c3[2]);
+								//printf("CHARS(%c)(%c)(%c)", c3[0], c3[1], c3[2]);
 
 								if (c3[0] == 'l' && c3[1] == 's' && c3[2] == 'l'
 									|| c3[0] == 'l' && c3[1] == 's' && c3[2] == 'r'
@@ -975,7 +975,7 @@ int main(int argc, char **argv) {
 									|| c3[0] == 'r' && c3[1] == 'o' && c3[2] == 'r'
 									|| c3[0] == 'r' && c3[1] == 'r' && c3[2] == 'x') {
 
-									printf("SHIFT");
+									//printf("SHIFT");
 
 									if (c3[0] == 'a' && c3[1] == 's' && c3[2] == 'l') { // handle arithmetic left shift
 										*c = 'l';
@@ -1016,12 +1016,10 @@ int main(int argc, char **argv) {
 	unsigned char *rom = calloc(track_rom_size, 1);
 	uint32_t rom_offset = 0;
 
-	//printf("DIR_B = %d, DIR_H = %d, DIR_W = %d, CODE = %d, LABEL = %d, END = %d, DIR_UNK = %d, DIR_A = %d, DIR_I = %d, DIR_T = %d\n", DIR_B, DIR_H, DIR_W, CODE, LABEL, END, DIR_UNK, DIR_A, DIR_I, DIR_T);
-	//printf("UNKNOWN_BLOCK = %d, FIRST = %d, REG = %d, IMM = %d, LBL = %d, SHIFT_REG = %d, SHIFT_IMM = %d, MEM_REG = %d, MEM_IMM = %d, MEM_LBL = %d, MEM_SHIFT_REG = %d, MEM_SHIFT_IMM = %d, MUL_REG = %d\n", UNKNOWN_BLOCK, FIRST, REG, IMM, LBL, SHIFT_REG, SHIFT_IMM, MEM_REG, MEM_IMM, MEM_LBL, MEM_SHIFT_REG, MEM_SHIFT_IMM, MUL_REG);
-	printf("---\nLine:\tType:\n");
+	printf("\nLine:\tType:\n");
 
 	for (int i = 0; i <= line_num; i++) {
-		printf("\n%lu:\t%d:\t", lines[i].line_num, lines[i].type);
+		printf("%lu:\t%d:\t", lines[i].line_num, lines[i].type);
 
 		switch (lines[i].type) {
 			case CODE:
@@ -1079,12 +1077,12 @@ int main(int argc, char **argv) {
 							starts_with_last_success = false;
 						}
 
-						if (starts_with_last_success) {
-							printf("Last encoding success at #%d\n", last_encode_success);
-						} else {
+						if (!starts_with_last_success) {
 							printf("Unrecognized instruction: ");
 							lineIssue(&lines[i]);
-						}
+						}// else {
+						//	printf("Last encoding success at #%d\n", last_encode_success);
+						//}
 					}
 
 					if (starts_with_last_success && encodings[last_encode_success].suffix != NOP) {
@@ -1092,13 +1090,13 @@ int main(int argc, char **argv) {
 
 						// TODO: make sure all instructions read properly, like `blt`, used to read as `bl` + `t`, not `b` + `lt`
 						if (last_encode_success == 9 && mi == 3) { // make sure bl isn't actually something like blt
-							printf("BL should be B\n");
+							//printf("BL should be B\n");
 							success_encoding = &(encodings[7]);
 						} else {
 							success_encoding = &(encodings[last_encode_success]);
 						}
 
-						printf("Probable mnemonic #%d (%s)\n", last_encode_success, success_encoding->mnemonic);
+						//printf("Probable mnemonic #%d (%s)\n", last_encode_success, success_encoding->mnemonic);
 
 						// TODO: encode as much of the mnemonic as we can at this stage, later, we'll read the rest of the instruction to determine other values we can OR in.
 						char *oprnd1_start = mnemonic_start + mi;
@@ -1107,7 +1105,7 @@ int main(int argc, char **argv) {
 						encoding = success_encoding->opcode | success_encoding->encode(rom_offset, oprnd1_start, success_encoding->secondary_encoding, labels, label_tot, inst);
 
 						enum InstructionCondition cond = mi == success_encoding->mnemonic_length ? AL : getInstCond(mnemonic_start + success_encoding->mnemonic_length); // TODO: when AL comes through, need to check to make sure it is proper.
-						printf("Probable instruction condition: 0x%x\n", cond);
+						//printf("Probable instruction condition: 0x%x\n", cond);
 
 						encoding |= cond << 28;
 
@@ -1118,34 +1116,33 @@ int main(int argc, char **argv) {
 
 							switch (success_encoding->suffix) {
 								case SET_FLAGS:
-									printf("Instruction detected with possible set flags\n");
+									//printf("Instruction detected with possible set flags\n");
 
 									encoding |= (last_two[1] == 's') << 20;
 
 									break;
 								case DATA_SIZE:
-									// TODO: bits 21, 23, and 24 will need to be set later accordingly
-									printf("Instruction detected with possible data size ");
+									//printf("Instruction detected with possible data size ");
 
 									switch (last_two[1]) {
 										case 'b':
 											if (last_two[0] == 's') { // ___sb
-												printf("sb");
+												//printf("sb");
 
 												encoding = (encoding & 0xF1FFFF9F) | (0xD << 4);
 											} else { // ___b
-												printf("b");
+												//printf("b");
 
 												encoding = (encoding & 0xF7FFFFFF) | (1 << 26) | (1 << 22);
 											}
 											break;
 										case 't':
 											if (last_two[0] == 'b') { // ___bt
-												printf("bt");
+												//printf("bt");
 
 												encoding = (encoding & 0xF6FFFFFF) | (1 << 26) | (0x3 << 21);
 											} else { // ___t
-												printf("t");
+												//printf("t");
 
 												encoding = (encoding & 0xF6BFFFFF) | (1 << 26) | (1 << 21);
 											}
@@ -1153,22 +1150,22 @@ int main(int argc, char **argv) {
 										case 'h':
 											encoding &= encoding & 0xF1FFFF9F;
 											if (last_two[0] == 's') { // ___sh
-												printf("sh");
+												//printf("sh");
 
 												encoding |= 0xF << 4;
 											} else { // ___h
-												printf("h");
+												//printf("h");
 
 												encoding |= 0xB << 4;
 											}
 											break;
 									}
 
-									printf("\n");
+									//printf("\n");
 
 									break;
 								case ADDRESSING_MODE: // FIXME: when encoding ldm and sdm in previous section, note that ldm has bit 20 set and stm has bit 20 cleared. this means that we should probably not mask that bit in this section--review
-									printf("Instruction detected with possible addressing mode");
+									//printf("Instruction detected with possible addressing mode\n");
 
 									// TODO: bit 21 is wback, will need to set later if needed for the specific instruction based on operands
 									encoding = (encoding & 0xF02FFFFF) | (1 << 27);
@@ -1231,7 +1228,7 @@ int main(int argc, char **argv) {
 									}
 									break;
 								case BYTE_SIZE:
-									printf("Instruction detected with possible byte data size\n");
+									//printf("Instruction detected with possible byte data size\n");
 
 									encoding |= (last_two[1] == 'b') << 22;
 
@@ -1240,9 +1237,9 @@ int main(int argc, char **argv) {
 						}
 						// TODO: we might want to say somewhere that this assembler will only accept divided syntax for ARM assembly rather than unified syntax / UAL, but then we would have to change it to make sure that all immediate values are required to start with '#'
 					} else {
-						if (starts_with_last_success) {
-							printf("Probable nop\n");
-						}
+						//if (starts_with_last_success) {
+						//	printf("Probable nop\n");
+						//}
 
 						encoding = encodings[NOP_ENCODING_INDEX].encode(rom_offset, mnemonic_start, false, labels, label_tot, inst);
 					}
@@ -1325,7 +1322,6 @@ int main(int argc, char **argv) {
 				break;
 			default:
 				printf("\n");
-
 				break;
 		}
 	}
