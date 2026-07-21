@@ -73,5 +73,13 @@ Name | Directive | Example Usage
 ---- | --------- | -------------
 Define bytes | `@b <byte list>` | `@b $10, #255`
 Define halfwords | `@h <halfword list>` | `@h %10000000011`
-Define words | `@w <word list>` | `@w $05000200, $4000130, %110000000000000000000000010`
+Define words | `@w <word list>` | `@w $05000200,$4000130, %110000000000000000000000010`
+
+## Other Assembler Syntax
+
+- *Labels* are delineated by a colon (`:`) at the end of the label's name. Label names are case insensitive alphanumeric text.
+- *Comments* are any text after a semi-colon (`;`). They can be placed anywhere at the end of a line.
+- *Instruction constants* must be prefixed with one of the following characters that determines the constant's base: `$` (hexadecimal; base-16), `#` (decimal; base-10), or `%` (binary; base-2).
+- *Instruction operands* must be seperated by single commas (`,`) and can have any number of spaces or tabs between them.
+- *Directive operands* do not necessarily need to be seperated by commas, but must be seperated by at least one non-alphanumeric character (e.g. comma, space, tab, underscore, etc.) with the exception of the following characters: `$`, `#`, `%`, and `;`.
 

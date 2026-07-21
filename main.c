@@ -827,7 +827,7 @@ int main(int argc, char **argv) {
 														k == 'h' ? DIR_H :
 																	DIR_W;
 
-								for (c += 2; *c != '\n'; c++) {
+								for (c += 2; *c != '\n' && *c != ';'; c++) {
 									if (*c == '$' || *c == '#' || *c == '%') {
 										track_rom_size += lines[line_num].type;
 									}
