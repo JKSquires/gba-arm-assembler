@@ -38,6 +38,7 @@ Branch and Exchange | `bx{<cond>} <Rm>` | `bx r14`
 Compare Negative | `cmn{<cond>}{s} <Rn>, <oprnd2> {, <shift>}` | `cmn r0, r2` / `cmn r8,$6000000` / `cmneq r5, r3, lsr #3`
 Compare | `cmp{<cond>}{s} <Rn>, <oprnd2> {, <shift>}` | `cmp r0, r2` / `cmp r8,$6000000` / `cmpeq r5, r3, lsr #3`
 Bitwise Exclusive Or | `eor{<cond>}{s} <Rd>, <Rn>, <oprnd2> {, <shift>}` | `eor r0, r0, r1` / `eor r3, r12, #127` / `eor r2, r3, r4, asr r5`
+Load Register (Literal) | `ldr{<cond>} <Rt>, <label>` | `ldr r2, num1`
 Multiply Accumulate | `mla{<cond>}{s} <Rd>, <Rn>, <Rm>, <Ra>` | `mla r0, r0, r1, r2`
 Move | `mov{<cond>}{s} <Rd>, <oprnd2> {, <shift>}` | `mov r0, r2` / `mov r8,$6000000` / `moveqs r5, r3, lsr #3`
 Multiply | `mul{<cond>}{s} <Rd>, <Rn>, <Rm>` | `mul r0, r0, r1`

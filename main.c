@@ -281,6 +281,13 @@ uint16_t imm12(uint32_t val, Inst *i) {
 	return 0;
 }
 
+uint32_t unsupportedInstruction(uint32_t, char *, bool, struct Label *, unsigned long, Inst *i) {
+	printf("Unsupported instruction: ");
+	lineIssue(i->line);
+
+	return 0;
+}
+
 uint32_t handleShift(uint8_t oprnd_i, Inst *i) {
 	uint32_t encoding = 0;
 
@@ -520,6 +527,58 @@ uint32_t bx(uint32_t, char *oprnd1_start, bool, struct Label *, unsigned long, I
 	return encoding;
 }
 
+uint32_t ldrStr(uint32_t inst_offset, char *oprnd1_start, bool is_ldr, struct Label *labels, unsigned long label_tot, Inst *i) {
+	uint32_t encoding = 0;
+	bool p = 1;
+	bool u = 0;
+	bool w = 0;
+
+	if (i->block_count < 2) {
+		printf("Instruction requires at least 2 operands: ");
+		lineIssue(i->line);
+		return 0;
+	}
+
+	uint8_t t_reg_data = readReg(oprnd1_start, 1, false, i);
+	if (t_reg_data & REG_READ_ERR)
+		return 0;
+	encoding |= (t_reg_data & 0xF) << 12;
+
+	if (i->blocks[1].type == LBL && is_ldr) {
+		printf("LDR/STR Literal\n");
+
+		unsigned int inst_label_length = 0;
+		for (; i->blocks[1].start[inst_label_length] >= 'a' && i->blocks[1].start[inst_label_length] <= 'z' || i->blocks[1].start[inst_label_length] >= '0' && i->blocks[1].start[inst_label_length] <= '9'; inst_label_length++);
+
+		unsigned long label_i = findLabel(i->blocks[1].start, inst_label_length, labels, label_tot);
+		if (label_i == label_tot) {
+			printf("Cannot find label: ");
+			lineIssue(i->line);
+
+			return 0;
+		}
+
+		uint32_t label_offset = labels[label_i].offset;
+
+		uint32_t val = label_offset - (inst_offset + 8);
+		u = val <= 0xFFF;
+		val = 0 - (!u * val);
+
+		if (val > 0xFFF) {
+			printf("Destination label is too far from instruction to use literal: ");
+			lineIssue(i->line);
+			return 0;
+		}
+
+		encoding |= 0x001F0000 | val;
+	} else {
+		return unsupportedInstruction(0, NULL, false, NULL, 0, i);
+	}
+
+	return encoding | (p << 24) | (u << 23) | (w << 21);
+}
+
+
 uint32_t lsl(uint32_t, char *oprnd1_start, bool, struct Label *, unsigned long, Inst *i) {
 	return shiftPseudoInst(oprnd1_start, LSL, i);
 }
@@ -569,13 +628,6 @@ uint32_t swi(uint32_t, char *oprnd1_start, bool, struct Label *, unsigned long, 
 	return imm24;
 }
 
-uint32_t unsupportedInstruction(uint32_t, char *, bool, struct Label *, unsigned long, Inst *i) {
-	printf("Unsupported instruction: ");
-	lineIssue(i->line);
-
-	return 0;
-}
-
 InstEncoding *createEncodings() {
 	InstEncoding *encodings = malloc(ENCODINGS_COUNT * sizeof *encodings);
 
@@ -594,7 +646,7 @@ InstEncoding *createEncodings() {
 	encodings[12] =	(InstEncoding){rxOprnd2,				"cmp",		0x01500000,	3,	true,	COND_ONLY};
 	encodings[13] =	(InstEncoding){rdRnOprnd2,				"eor",		0x00200000,	3,	false,	SET_FLAGS};
 	encodings[14] =	(InstEncoding){unsupportedInstruction,	"ldm",		0x00000000,	3,	false,	ADDRESSING_MODE};
-	encodings[15] =	(InstEncoding){unsupportedInstruction,	"ldr",		0x00000000,	3,	false,	DATA_SIZE};
+	encodings[15] =	(InstEncoding){ldrStr,					"ldr",		0x04100000,	3,	true,	DATA_SIZE};
 	encodings[16] =	(InstEncoding){lsl,						"lsl",		0x00000000,	3,	false,	SET_FLAGS};
 	encodings[17] =	(InstEncoding){lsr,						"lsr",		0x00000000,	3,	false,	SET_FLAGS};
 	encodings[18] =	(InstEncoding){rxRxRxRx,				"mla",		0x00200090,	3,	false,	SET_FLAGS};
@@ -616,7 +668,7 @@ InstEncoding *createEncodings() {
 	encodings[34] =	(InstEncoding){rxRxRxRx,				"smlal",	0x00E00090,	5,	true,	SET_FLAGS};
 	encodings[35] =	(InstEncoding){rxRxRxRx,				"smull",	0x00C00090,	5,	true,	SET_FLAGS};
 	encodings[36] =	(InstEncoding){unsupportedInstruction,	"stm",		0x00000000,	3,	false,	ADDRESSING_MODE};
-	encodings[37] =	(InstEncoding){unsupportedInstruction,	"str",		0x00000000,	3,	false,	DATA_SIZE};
+	encodings[37] =	(InstEncoding){ldrStr,					"str",		0x04000000,	3,	false,	DATA_SIZE};
 	encodings[38] =	(InstEncoding){rdRnOprnd2,				"sub",		0x00400000,	3,	false,	SET_FLAGS};
 	encodings[39] =	(InstEncoding){swi,						"swi",		0x0F000000,	3,	false,	COND_ONLY};
 	encodings[40] =	(InstEncoding){unsupportedInstruction,	"swp",		0x00000000,	3,	false,	BYTE_SIZE};
@@ -1071,7 +1123,7 @@ int main(int argc, char **argv) {
 									encoding |= (last_two[1] == 's') << 20;
 
 									break;
-								case DATA_SIZE: // FIXME: when encoding ldr and sdr in previous section, note that ldr has bit 20 set and str has bit 20 cleared. this means that we should probably not mask that bit in this section--review
+								case DATA_SIZE:
 									// TODO: bits 21, 23, and 24 will need to be set later accordingly
 									printf("Instruction detected with possible data size ");
 
