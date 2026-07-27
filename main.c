@@ -96,7 +96,7 @@ enum NumType {
 
 struct Line {
 	char *start; // TODO: might be nice to get rid of this
-	void *data;
+	void *data; // TODO: I don't think it needs to be a void * anymore because we never ended up using it for any other type of data
 	unsigned long line_num;
 	enum LineType type;
 };
@@ -196,6 +196,8 @@ void lineIssue(struct Line *line) {
 uint8_t readReg(char *reg, uint8_t oprnd_num, bool support_writeback, Inst *i) {
 	uint8_t data = 0;
 
+	if (*reg == '[' || *reg == '{') reg++;
+
 	if (*reg != 'r') {
 		printf("Issue reading register: ");
 		lineIssue(i->line);
@@ -206,6 +208,10 @@ uint8_t readReg(char *reg, uint8_t oprnd_num, bool support_writeback, Inst *i) {
 	char *c = reg + 1;
 	for (; *c >= '0' && *c <= '9'; c++) {
 		data = data * 10 + (*c - '0');
+	}
+	if (data > 15) {
+		printf("Only registers r0-r15 are allowed: ");
+		lineIssue(i->line);
 	}
 	data &= 0xF;
 
@@ -224,13 +230,17 @@ uint8_t readReg(char *reg, uint8_t oprnd_num, bool support_writeback, Inst *i) {
 
 uint32_t readConst(char *constant, Inst *i) {
 	uint32_t data = 0;
+	bool neg = false;
 
 	if (*constant == '$' || *constant == '#' || *constant == '%') {
 		enum NumType num_type = *constant == '$' ? HEX :
 								*constant == '#' ? DEC :
 											BIN;
-
-		char *c = constant + 1;
+		if (*(++constant) == '-') {
+			neg = true;
+			constant++;
+		}
+		char *c = constant;
 		for (; (*c >= '0' && *c <= '9') || (getLowerChar(*c) >= 'a' && getLowerChar(*c) <= 'f'); c++) {
 			switch (num_type) {
 				case HEX:
@@ -264,7 +274,7 @@ uint32_t readConst(char *constant, Inst *i) {
 		lineIssue(i->line);
 	}
 
-	return data;
+	return neg ? 0 - data : data;
 }
 
 uint16_t imm12(uint32_t val, Inst *i) {
@@ -544,8 +554,49 @@ uint32_t ldrStr(uint32_t inst_offset, char *oprnd1_start, bool is_ldr, struct La
 		return 0;
 	encoding |= (t_reg_data & 0xF) << 12;
 
-	if (i->blocks[1].type == LBL && is_ldr) {
-		printf("LDR/STR Literal\n");
+	if (i->blocks[1].type == MEM_REG) {
+		uint8_t n_reg_data = readReg(i->blocks[1].start, 2, false, i);
+		if (n_reg_data & REG_READ_ERR)
+			return 0;
+		encoding |= (n_reg_data & 0xF) << 16;
+
+		if (i->block_count >= 3) {
+			if (i->blocks[2].type & REG) {
+				printf("LDR/STR register\n");
+				encoding = 0; // FIXME: set to zero to signify unsupported instruction right now; change
+			} else if (i->blocks[2].type & IMM) {
+				printf("LDR/STR immediate\n");
+
+				uint32_t constant = readConst(i->blocks[2].start, i);
+				if (constant >= 1 << 31) {
+					constant = 0 - constant;
+				} else {
+					u = 1;
+				}
+
+				uint16_t imm = imm12(constant, i); // FIXME: not all use imm12, i.e. ldrh, strh, ldrsb, and strsb. need to differentiate. maybe secondary bool instead of is_ldr, set to flag this, then, to check is_ldr, go to skipWhitespace(i->blocks[0].start) and check char for 'l'
+				encoding |= imm & 0xFFF;
+
+				if (i->blocks[2].type & MEM) {
+					p = 1;
+
+					char *c = i->blocks[2].start;
+					for (; *c != '!' && *c != '\n' && *c != ';'; c++);
+					if (*c == '!') w = 1;
+				}
+
+				if (i->block_count > 3) {
+					printf("Load/store register immediate cannot have more than 3 operands: ");
+					lineIssue(i->line);
+				}
+			} else {
+				printf("Unrecognized load/store register instruction: ");
+				lineIssue(i->line);
+				return 0;
+			}
+		}
+	} else if (i->blocks[1].type == LBL && is_ldr) {
+		printf("LDR Literal\n");
 
 		unsigned int inst_label_length = 0;
 		for (; i->blocks[1].start[inst_label_length] >= 'a' && i->blocks[1].start[inst_label_length] <= 'z' || i->blocks[1].start[inst_label_length] >= '0' && i->blocks[1].start[inst_label_length] <= '9'; inst_label_length++);
@@ -559,7 +610,7 @@ uint32_t ldrStr(uint32_t inst_offset, char *oprnd1_start, bool is_ldr, struct La
 		}
 
 		uint32_t label_offset = labels[label_i].offset;
-
+		// FIXME: not all use imm12, i.e. ldrh, strh, ldrsb, and strsb.
 		uint32_t val = label_offset - (inst_offset + 8);
 		u = val <= 0xFFF;
 		val = 0 - (!u * val);
@@ -572,10 +623,15 @@ uint32_t ldrStr(uint32_t inst_offset, char *oprnd1_start, bool is_ldr, struct La
 
 		encoding |= 0x001F0000 | val;
 	} else {
-		return unsupportedInstruction(0, NULL, false, NULL, 0, i);
+		printf("Unrecognized load/store register instruction: ");
+		lineIssue(i->line);
+		return 0;
 	}
 
-	return encoding | (p << 24) | (u << 23) | (w << 21);
+	if (encoding != 0)
+		return encoding | (p << 24) | (u << 23) | (w << 21);
+	else
+		return unsupportedInstruction(0, NULL, false, NULL, 0, i); // TODO: remove this when all valid ldr/str instructions are supported
 }
 
 
@@ -707,9 +763,9 @@ enum InstructionCondition getInstCond(char *cond_start) {
 }
 
 
-// FIXME: should probably not store so much on the stack...
+// FIXME: go through and make sure not too much gets stored on the stack
 int main(int argc, char **argv) {
-	FILE *asm_file; // maybe for when we implement including other asm files in a file we should have an array of those files.
+	FILE *asm_file; // TODO: maybe for when we implement including other asm files in a file we should have an array of those files.
 	FILE *gba_file;
 
 	if (argc < 2) {
