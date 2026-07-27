@@ -684,6 +684,22 @@ uint32_t swi(uint32_t, char *oprnd1_start, bool, struct Label *, unsigned long, 
 	return imm24;
 }
 
+uint32_t und(uint32_t, char *oprnd1_start, bool, struct Label *, unsigned long, Inst *i) {
+	uint32_t encoding = 0;
+	uint16_t expr = 0;
+	if (*oprnd1_start != '\n' && *oprnd1_start != ';') {
+		uint32_t constant = readConst(oprnd1_start, i);
+		if (constant > 0xFFFF) {
+			printf("Generate undefined instruction with expr requires that expr <= 0xFFFF: ");
+			lineIssue(i->line);
+			return 0;
+		}
+		expr = (uint16_t)constant;
+	}
+
+	return encoding | ((expr & 0xFFF0) << 4) | expr & 0xF;
+}
+
 InstEncoding *createEncodings() {
 	InstEncoding *encodings = malloc(ENCODINGS_COUNT * sizeof *encodings);
 
@@ -730,7 +746,7 @@ InstEncoding *createEncodings() {
 	encodings[40] =	(InstEncoding){unsupportedInstruction,	"swp",		0x00000000,	3,	false,	BYTE_SIZE};
 	encodings[41] =	(InstEncoding){rxOprnd2,				"teq",		0x01300000,	3,	true,	COND_ONLY};
 	encodings[42] =	(InstEncoding){rxOprnd2,				"tst",		0x01100000,	3,	true,	COND_ONLY};
-	encodings[43] =	(InstEncoding){unsupportedInstruction,	"und",		0x00000000,	3,	false,	COND_ONLY};
+	encodings[43] =	(InstEncoding){und,						"und",		0x07F000F0,	3,	false,	COND_ONLY};
 	encodings[44] =	(InstEncoding){rxRxRxRx,				"umlal",	0x00A00090,	5,	true,	SET_FLAGS};
 	encodings[45] =	(InstEncoding){rxRxRxRx,				"umull",	0x00800090,	5,	true,	SET_FLAGS};
 

@@ -24,6 +24,22 @@ gcc main.c
 
 ---
 
+## Misc. Assembler Syntax
+
+- *Labels* are delineated by a colon (`:`) at the end of the label's name. Label names are case insensitive alphanumeric text.
+- *Comments* are any text after a semi-colon (`;`). They can be placed anywhere at the end of a line.
+- *Instruction constants* must be prefixed with one of the following characters that determines the constant's base: `$` (hexadecimal; base-16), `#` (decimal; base-10), or `%` (binary; base-2).
+- *Instruction operands* must be seperated by single commas (`,`) and can have any number of spaces or tabs between them.
+- *Directive operands* do not necessarily need to be seperated by commas, but must be seperated by at least one non-alphanumeric character (e.g. comma, space, tab, underscore, etc.) with the exception of the following characters: `$`, `#`, `%`, and `;`.
+
+## Supported Assembler Directives
+
+Name | Directive | Example Usage
+---- | --------- | -------------
+Define bytes | `@b <byte list>` | `@b $10, #255`
+Define halfwords | `@h <halfword list>` | `@h %10000000011`
+Define words | `@w <word list>` | `@w $05000200,$4000130, %110000000000000000000000010`
+
 ## Supported Instructions
 
 Name | Instruction | Example Usage
@@ -70,20 +86,5 @@ Logical Shift Right | `lsr{<cond>}{s} <Rd>, <Rm>, <oprnd2>` | `lsr r0, r0, #4` /
 No Operation | `nop` | `nop`
 Rotate Right | `ror{<cond>}{s} <Rd>, <Rm>, <oprnd2>` | `ror r0, r0, #4` / `rorne r2,r4,r3`
 Rotate Right with Extend | `rrx{<cond>}{s} <Rd>, <Rm>` | `rrx r2, r1`
-
-## Supported Assembler Directives
-
-Name | Directive | Example Usage
----- | --------- | -------------
-Define bytes | `@b <byte list>` | `@b $10, #255`
-Define halfwords | `@h <halfword list>` | `@h %10000000011`
-Define words | `@w <word list>` | `@w $05000200,$4000130, %110000000000000000000000010`
-
-## Other Assembler Syntax
-
-- *Labels* are delineated by a colon (`:`) at the end of the label's name. Label names are case insensitive alphanumeric text.
-- *Comments* are any text after a semi-colon (`;`). They can be placed anywhere at the end of a line.
-- *Instruction constants* must be prefixed with one of the following characters that determines the constant's base: `$` (hexadecimal; base-16), `#` (decimal; base-10), or `%` (binary; base-2).
-- *Instruction operands* must be seperated by single commas (`,`) and can have any number of spaces or tabs between them.
-- *Directive operands* do not necessarily need to be seperated by commas, but must be seperated by at least one non-alphanumeric character (e.g. comma, space, tab, underscore, etc.) with the exception of the following characters: `$`, `#`, `%`, and `;`.
+Generate Undefined Instruction | `und{<cond>} {#expr}` | `und` / `und #1234`
 
