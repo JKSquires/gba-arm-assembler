@@ -13,10 +13,10 @@ Compile the main C file.
 Recommended way:
 
 ```sh
-gcc -O2 -s -fshort-enums main.c -o gbaaa
+gcc -O2 -s main.c -o gbaaa
 ```
 
-But if you really wanted to, you could just run:
+But if you really want to, you could just run:
 
 ```sh
 gcc main.c

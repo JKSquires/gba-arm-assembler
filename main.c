@@ -98,7 +98,7 @@ struct Line {
 	char *start; // TODO: might be nice to get rid of this
 	void *data; // TODO: I don't think it needs to be a void * anymore because we never ended up using it for any other type of data
 	unsigned long line_num;
-	enum LineType type;
+	enum LineType type : 8;
 };
 
 struct Label {
@@ -109,7 +109,7 @@ struct Label {
 
 struct InstructionBlock {
 	char *start;
-	enum BlockType type;
+	enum BlockType type : 8;
 };
 
 struct InstructionEncoding {
@@ -117,8 +117,8 @@ struct InstructionEncoding {
 	char *mnemonic;
 	uint32_t opcode;
 	uint8_t mnemonic_length;
-	bool secondary_encoding;
-	enum InstructionSuffix suffix;
+	enum InstructionSuffix suffix : 8;
+	bool secondary_encoding : 1;
 };
 
 struct Instruction {
@@ -146,7 +146,6 @@ char *skipEmptyLines(char *c, char *buffer_end, unsigned long *file_line_num) {
 	if (c < buffer_end) {
 		char *next_start = skipWhitespace(c + (*c == '\n'));
 		while (*next_start == '\n' || *next_start == ';') {
-			//printf("\nLine %lu found empty\n", *file_line_num);
 			if (next_start >= buffer_end) {
 				c = next_start;
 				break;
@@ -540,7 +539,7 @@ uint32_t bx(uint32_t, char *oprnd1_start, bool, struct Label *, unsigned long, I
 
 uint32_t ldrStr(uint32_t inst_offset, char *oprnd1_start, bool is_ldr, struct Label *labels, unsigned long label_tot, Inst *i) {
 	uint32_t encoding = 0;
-	bool p = 1;
+	bool p = 0;
 	bool u = 1;
 	bool w = 0;
 
@@ -647,6 +646,7 @@ uint32_t ldrStr(uint32_t inst_offset, char *oprnd1_start, bool is_ldr, struct La
 		}
 
 		encoding |= 0x001F0000 | val;
+		p = 1;
 	} else {
 		printf("Unrecognized load/store register instruction: ");
 		lineIssue(i->line);
@@ -683,7 +683,7 @@ uint32_t rrx(uint32_t, char *oprnd1_start, bool, struct Label *, unsigned long, 
 		return 0;
 	}
 
-	// TODO: create a more robust instruction-building system for pseudo-instructions
+	// FIXME: create a more robust instruction-building system for pseudo-instructions
 	struct InstructionBlock *old_blocks = i->blocks;
 	i->blocks = malloc(3 * sizeof (struct InstructionBlock));
 	for (int ibi = 0; ibi < 2; ibi++) {
@@ -804,7 +804,7 @@ enum InstructionCondition getInstCond(char *cond_start) {
 }
 
 
-// FIXME: go through and make sure not too much gets stored on the stack
+// TODO: go through and make sure not too much gets stored on the stack
 int main(int argc, char **argv) {
 	FILE *asm_file; // TODO: maybe for when we implement including other asm files in a file we should have an array of those files.
 	FILE *gba_file;
@@ -900,7 +900,6 @@ int main(int argc, char **argv) {
 
 				c = skipWhitespace(c + 1) - 1;
 				lines[line_num] = (struct Line){c + 1, NULL, file_line_num, CODE};
-				//printf("\nWrite line %lu starting with '%c'\n", file_line_num, *(c + 1));
 
 				blocks[0] = (struct InstructionBlock){c + 1, FIRST};
 				count_blocks = 1;
@@ -910,8 +909,6 @@ int main(int argc, char **argv) {
 		}
 
 		if (!comment) {
-			//printf("<%c>", *c); // TODO: remove debug lines
-
 			switch (*c) {
 				case '@':
 					switch (getLowerChar(*(c + 1))) {
@@ -1066,15 +1063,11 @@ int main(int argc, char **argv) {
 								if (c3[0] != '\n') c3[1] = getLowerChar(*(c + 1));
 								if (c3[1] != '\n') c3[2] = getLowerChar(*(c + 2));
 
-								//printf("CHARS(%c)(%c)(%c)", c3[0], c3[1], c3[2]);
-
 								if (c3[0] == 'l' && c3[1] == 's' && c3[2] == 'l'
 									|| c3[0] == 'l' && c3[1] == 's' && c3[2] == 'r'
 									|| c3[0] == 'a' && c3[1] == 's' && c3[2] == 'r'
 									|| c3[0] == 'r' && c3[1] == 'o' && c3[2] == 'r'
 									|| c3[0] == 'r' && c3[1] == 'r' && c3[2] == 'x') {
-
-									//printf("SHIFT");
 
 									if (c3[0] == 'a' && c3[1] == 's' && c3[2] == 'l') { // handle arithmetic left shift
 										*c = 'l';
@@ -1189,7 +1182,6 @@ int main(int argc, char **argv) {
 
 						// TODO: make sure all instructions read properly, like `blt`, used to read as `bl` + `t`, not `b` + `lt`
 						if (last_encode_success == 9 && mi == 3) { // make sure bl isn't actually something like blt
-							//printf("BL should be B\n");
 							success_encoding = &(encodings[7]);
 						} else {
 							success_encoding = &(encodings[last_encode_success]);
@@ -1439,7 +1431,7 @@ int main(int argc, char **argv) {
 
 
 	if (argc > 2) {
-		gba_file = fopen(argv[2], "w");
+		gba_file = fopen(argv[2], "wb");
 
 		if (gba_file == NULL) {
 			fprintf(stderr, "ERROR: Error creating or opening %s\n", argv[2]);
