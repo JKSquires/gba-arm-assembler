@@ -59,6 +59,9 @@ Load Register (Literal) | `ldr{<cond>}{b} <Rt>, <label>` | `ldr r2, num1`
 Load Register (Register) | `ldr{cond}{b} <Rt>, [<Rn>, +/-<Rm>{, <shift>}]{!}` / `ldr{cond}{b} <Rt>, [<Rn>], +/-<Rm>{, <shift>}` | `ldr r6, [r2, r3]` / `ldreq r7, [r1, -r2]!` / `ldrb r4, [r3, r4, ror #2]` / `ldreqb r2, [r1], r5, lsl #1`
 Load Register Unprivileged (Immediate) | `ldr{cond}{b}t <Rt>, [<Rn>]{, #+/-<imm12>}` | `ldrbt r2, [r6]` / `ldreqt r7, [r1], #6`
 Load Register Unprivileged (Register) | `ldr{cond}{b}t <Rt>, [<Rn>], +/-<Rm>{, <shift>}` | `ldrt r4, [r3], r5` / `ldrbt r1, [r6], -r2, lsr #2`
+Load Halfword / Signed Halfword / Signed Byte (Immediate) | `ldr{cond}<h/sh/sb> <Rt>, [<Rn>{, #+/-<imm8>}]{!}` / `ldr{cond}<h/sh/sb> <Rt>, [<Rn>], #+/-<imm8>` | `ldrsh r1, [r2]` / `ldrh r3, [r4,#-6]` / `ldrneh r2, [r3], $A` / `ldrsb r5, [r2, %10011]!`
+Load Halfword / Signed Halfword / Signed Byte (Literal) | `ldr{<cond>}<h/sh/sb> <Rt>, <label>` | `ldrh r2, num1`
+Load Halfword / Signed Halfword / Signed Byte (Register) | `ldr{cond}<h/sh/sb> <Rt>, [<Rn>, +/-<Rm>]{!}` / `ldr{cond}<h/sh/sb> <Rt>, [<Rn>], +/-<Rm>` | `ldrh r6, [r2, r3]` / `ldreqh r7, [r1, -r2]!` / `ldrsh r0, [r4], r2`
 Multiply Accumulate | `mla{<cond>}{s} <Rd>, <Rn>, <Rm>, <Ra>` | `mla r0, r0, r1, r2`
 Move | `mov{<cond>}{s} <Rd>, <oprnd2> {, <shift>}` | `mov r0, r2` / `mov r8,$6000000` / `moveqs r5, r3, lsr #3`
 Multiply | `mul{<cond>}{s} <Rd>, <Rn>, <Rm>` | `mul r0, r0, r1`
@@ -71,6 +74,9 @@ Store Register (Immediate) | `str{cond}{b} <Rt>, [<Rn>{, #+/-<imm12>}]{!}` / `st
 Store Register (Register) | `str{cond}{b} <Rt>, [<Rn>, +/-<Rm>{, <shift>}]{!}` / `str{cond}{b} <Rt>, [<Rn>], +/-<Rm>{, <shift>}` | `str r6, [r2, r3]` / `streq r7, [r1, -r2]!` / `strb r4, [r3, r4, ror #2]` / `streqb r2, [r1], r5, lsl #1`
 Store Register Unprivileged (Immediate) | `str{cond}{b}t <Rt>, [<Rn>]{, #+/-<imm12>}` | `strbt r2, [r6]` / `streqt r7, [r1], #6`
 Store Register Unprivileged (Register) | `str{cond}{b}t <Rt>, [<Rn>], +/-<Rm>{, <shift>}` | `strt r4, [r3], r5` / `strbt r1, [r6], -r2, lsr #2`
+Store Halfword / Signed Halfword / Signed Byte (Immediate) | `str{cond}<h/sh/sb> <Rt>, [<Rn>{, #+/-<imm8>}]{!}` / `str{cond}<h/sh/sb> <Rt>, [<Rn>], #+/-<imm8>` | `strsh r1, [r2]` / `strh r3, [r4,#-6]` / `strneh r2, [r3], $A` / `strsb r5, [r2, %10011]!`
+Store Halfword / Signed Halfword / Signed Byte (Literal) | `str{<cond>}<h/sh/sb> <Rt>, <label>` | `strh r2, num1`
+Store Halfword / Signed Halfword / Signed Byte (Register) | `str{cond}<h/sh/sb> <Rt>, [<Rn>, +/-<Rm>]{!}` / `str{cond}<h/sh/sb> <Rt>, [<Rn>], +/-<Rm>` | `strh r6, [r2, r3]` / `streqh r7, [r1, -r2]!` / `strsh r0, [r4], r2`
 Signed Multiply Accumulate Long | `umlal{<cond>}{s} <RdLo>, <RdHi>, <Rn>, <Rm>` | `umlal r0, r1, r5, r8`
 Signed Multiply Long | `umull{<cond>}{s} <RdLo>, <RdHi>, <Rn>, <Rm>` | `umull r0, r1, r5, r8`
 Subtract | `sub{<cond>}{s} <Rd>, <Rn>, <oprnd2> {, <shift>}` | `sub r0, r0, r1` / `sub r3, r12, #127` / `sub r2, r3, r4, asr r5`

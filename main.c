@@ -117,8 +117,8 @@ struct InstructionEncoding {
 	char *mnemonic;
 	uint32_t opcode;
 	uint8_t mnemonic_length;
+	bool encoding_variant;
 	enum InstructionSuffix suffix : 8;
-	bool secondary_encoding : 1;
 };
 
 struct Instruction {
@@ -537,7 +537,7 @@ uint32_t bx(uint32_t, char *oprnd1_start, bool, struct Label *, unsigned long, I
 	return encoding;
 }
 
-uint32_t ldrStr(uint32_t inst_offset, char *oprnd1_start, bool is_ldr, struct Label *labels, unsigned long label_tot, Inst *i) {
+uint32_t ldrStr(uint32_t inst_offset, char *oprnd1_start, bool h_sh_sb, struct Label *labels, unsigned long label_tot, Inst *i) {
 	uint32_t encoding = 0;
 	bool p = 0;
 	bool u = 1;
@@ -562,8 +562,6 @@ uint32_t ldrStr(uint32_t inst_offset, char *oprnd1_start, bool is_ldr, struct La
 
 		if (i->block_count >= 3) {
 			if (i->blocks[2].type & REG) {
-				printf("LDR/STR register\n");
-
 				char *c2 = i->blocks[2].start;
 				if (*c2 == '-') {
 					c2++;
@@ -581,25 +579,37 @@ uint32_t ldrStr(uint32_t inst_offset, char *oprnd1_start, bool is_ldr, struct La
 					if (*c2 == '!') w = 1;
 				}
 
-				if (i->block_count >= 4) { // FIXME: not all support shift, i.e. ldrh, strh, ldrsb, and strsb.
-					encoding |= handleShift(3, i);
-				}
+				if (!h_sh_sb) {
+					if (i->block_count >= 4) {
+						encoding |= handleShift(3, i);
+					}
 
-				if (i->block_count > 4) {
-					printf("Load/store register (register) cannot have more than 3 operands: ");
+					if (i->block_count > 4) {
+						printf("Load/store register (register) cannot have more than 4 operands: ");
+						lineIssue(i->line);
+					}
+				} else if (i->block_count > 3) {
+					printf("Load/store halfword/signed halfword/signed byte (register) cannot have more than 3 operands: ");
 					lineIssue(i->line);
 				}
 			} else if (i->blocks[2].type & IMM) {
-				printf("LDR/STR immediate\n");
-
 				uint32_t constant = readConst(i->blocks[2].start, i);
 				if (constant >= 1 << 31) {
 					constant = 0 - constant;
 					u = 0;
 				}
 
-				uint16_t imm = imm12(constant, i); // FIXME: not all use imm12, i.e. ldrh, strh, ldrsb, and strsb. need to differentiate. maybe secondary bool instead of is_ldr, set to flag this, then, to check is_ldr, go to skipWhitespace(i->blocks[0].start) and check char for 'l'
-				encoding |= imm & 0xFFF;
+				if (constant > (0xFF | (0xF00 * !h_sh_sb))) {
+					printf("Destination address offset is too large for immediate: ");
+					lineIssue(i->line);
+					return 0;
+				}
+
+				if (!h_sh_sb) {
+					encoding |= constant & 0xFFF;
+				} else {
+					encoding |= (1 << 22) | ((constant & 0xF0) << 8) | (constant & 0x0F);
+				}
 
 				if (i->blocks[2].type & MEM) {
 					p = 1;
@@ -614,14 +624,14 @@ uint32_t ldrStr(uint32_t inst_offset, char *oprnd1_start, bool is_ldr, struct La
 					lineIssue(i->line);
 				}
 			} else {
-				printf("Unrecognized load/store register instruction: ");
+				printf("Unrecognized load/store instruction: ");
 				lineIssue(i->line);
 				return 0;
 			}
+		} else if (h_sh_sb) {
+			encoding |= 1 << 22;
 		}
-	} else if (i->blocks[1].type == LBL && is_ldr) {
-		printf("LDR Literal\n");
-
+	} else if (i->blocks[1].type == LBL && *(i->blocks[0].start) == 'l') {
 		unsigned int inst_label_length = 0;
 		for (; i->blocks[1].start[inst_label_length] >= 'a' && i->blocks[1].start[inst_label_length] <= 'z' || i->blocks[1].start[inst_label_length] >= '0' && i->blocks[1].start[inst_label_length] <= '9'; inst_label_length++);
 
@@ -634,29 +644,31 @@ uint32_t ldrStr(uint32_t inst_offset, char *oprnd1_start, bool is_ldr, struct La
 		}
 
 		uint32_t label_offset = labels[label_i].offset;
-		// FIXME: not all use imm12, i.e. ldrh, strh, ldrsb, and strsb.
 		uint32_t val = label_offset - (inst_offset + 8);
 		u = val <= 0xFFF;
 		val = 0 - (!u * val);
 
-		if (val > 0xFFF) {
-			printf("Destination label is too far from instruction to use literal: ");
+		if (val > (0xFF | (0xF00 * !h_sh_sb))) {
+			printf("Destination label is too far from load/store instruction to use literal: ");
 			lineIssue(i->line);
 			return 0;
 		}
 
-		encoding |= 0x001F0000 | val;
+		encoding |= 0x001F0000;
+		if (!h_sh_sb) {
+			encoding |= val;
+		} else {
+			encoding |= ((val & 0xF0) << 4) | (val & 0x0F);
+		}
+
 		p = 1;
 	} else {
-		printf("Unrecognized load/store register instruction: ");
+		printf("Unrecognized load/store instruction: ");
 		lineIssue(i->line);
 		return 0;
 	}
 
-	if (encoding != 0)
-		return encoding | (p << 24) | (u << 23) | (w << 21);
-	else
-		return unsupportedInstruction(0, NULL, false, NULL, 0, i); // TODO: remove this when all valid ldr/str instructions are supported
+	return encoding | (p << 24) | (u << 23) | (w << 21);
 }
 
 
@@ -743,7 +755,7 @@ InstEncoding *createEncodings() {
 	encodings[12] =	(InstEncoding){rxOprnd2,				"cmp",		0x01500000,	3,	true,	COND_ONLY};
 	encodings[13] =	(InstEncoding){rdRnOprnd2,				"eor",		0x00200000,	3,	false,	SET_FLAGS};
 	encodings[14] =	(InstEncoding){unsupportedInstruction,	"ldm",		0x00000000,	3,	false,	ADDRESSING_MODE};
-	encodings[15] =	(InstEncoding){ldrStr,					"ldr",		0x04100000,	3,	true,	DATA_SIZE};
+	encodings[15] =	(InstEncoding){ldrStr,					"ldr",		0x04100000,	3,	false,	DATA_SIZE};
 	encodings[16] =	(InstEncoding){lsl,						"lsl",		0x00000000,	3,	false,	SET_FLAGS};
 	encodings[17] =	(InstEncoding){lsr,						"lsr",		0x00000000,	3,	false,	SET_FLAGS};
 	encodings[18] =	(InstEncoding){rxRxRxRx,				"mla",		0x00200090,	3,	false,	SET_FLAGS};
@@ -1129,7 +1141,7 @@ int main(int argc, char **argv) {
 				}
 				printf("\n");
 
-				uint32_t encoding = 0x00000000; // TODO: encode CODE lines and write into the ROM buffer
+				uint32_t encoding = 0x00000000;
 
 				if (inst->block_count >= 1) {
 					char *mnemonic_start = inst->blocks[0].start;
@@ -1180,30 +1192,30 @@ int main(int argc, char **argv) {
 					if (starts_with_last_success && encodings[last_encode_success].suffix != NOP) {
 						InstEncoding *success_encoding;
 
-						// TODO: make sure all instructions read properly, like `blt`, used to read as `bl` + `t`, not `b` + `lt`
 						if (last_encode_success == 9 && mi == 3) { // make sure bl isn't actually something like blt
 							success_encoding = &(encodings[7]);
 						} else {
 							success_encoding = &(encodings[last_encode_success]);
 						}
 
+						enum InstructionCondition cond = mi == success_encoding->mnemonic_length ? AL : getInstCond(mnemonic_start + success_encoding->mnemonic_length);
+						//printf("Probable instruction condition: 0x%x\n", cond);
 						//printf("Probable mnemonic #%d (%s)\n", last_encode_success, success_encoding->mnemonic);
 
-						// TODO: encode as much of the mnemonic as we can at this stage, later, we'll read the rest of the instruction to determine other values we can OR in.
-						char *oprnd1_start = mnemonic_start + mi;
-						for (; *oprnd1_start != ' ' && *oprnd1_start != '\t' && *oprnd1_start != '\n' && *oprnd1_start != ';'; *oprnd1_start++);
-						oprnd1_start = skipWhitespace(oprnd1_start);
-						encoding = success_encoding->opcode | success_encoding->encode(rom_offset, oprnd1_start, success_encoding->secondary_encoding, labels, label_tot, inst);
+						for (; mnemonic_start[mi] != ' ' && mnemonic_start[mi] != '\t' && mnemonic_start[mi] != '\n'; mi++);
 
-						enum InstructionCondition cond = mi == success_encoding->mnemonic_length ? AL : getInstCond(mnemonic_start + success_encoding->mnemonic_length); // TODO: when AL comes through, need to check to make sure it is proper.
-						//printf("Probable instruction condition: 0x%x\n", cond);
+						uint8_t encoding_variant = success_encoding->encoding_variant;
+						if (success_encoding->suffix == DATA_SIZE) { // determine load/store register encoding variations (non-zero for _h, _sh, and _sb). Implicit mi > 2 as all encodings with DATA_SIZE have mnemonic_length > 2
+								encoding_variant = mnemonic_start[mi - 1] == 'h' || mnemonic_start[mi - 2] == 's';
+						}
 
-						encoding |= cond << 28;
+						char *oprnd1_start = skipWhitespace(mnemonic_start + mi);
+
+						encoding |= cond << 28 | success_encoding->opcode | success_encoding->encode(rom_offset, oprnd1_start, encoding_variant, labels, label_tot, inst);
 
 						//printf("MI=%d->'%c'", mi, mnemonic_start[mi]);
-						for (; mnemonic_start[mi] != ' ' && mnemonic_start[mi] != '\t' && mnemonic_start[mi] != '\n'; mi++); // TODO: do we really need this, we kind of check this earlier--review
-						if (mnemonic_start + mi > asm_buffer_start + 2) {
-							char last_two[] = {getLowerChar(mnemonic_start[mi - 2]), getLowerChar(mnemonic_start[mi - 1])};
+						if (mi > 2) {
+							char last_two[] = {mnemonic_start[mi - 2], mnemonic_start[mi - 1]};
 
 							switch (success_encoding->suffix) {
 								case SET_FLAGS:
