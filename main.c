@@ -215,7 +215,7 @@ uint8_t readReg(char *reg, uint8_t oprnd_num, bool support_writeback, Inst *i) {
 	}
 	data &= 0xF;
 
-	if (*c == '!') {
+	if (*c == '!') { // TODO: writeback directly on a register is only supported (I think--double check) on ldm/stm kind of thing, so it would be more efficient to manually check then rather than always checking here and having to pass in support_writeback
 		data |= REG_READ_WRITEBACK;
 		c++;
 
@@ -299,17 +299,18 @@ uint32_t unsupportedInstruction(uint32_t, char *, bool, struct Label *, unsigned
 }
 
 uint32_t handleShift(uint8_t oprnd_i, Inst *i) {
+	struct InstructionBlock block = i->blocks[oprnd_i];
 	uint32_t encoding = 0;
 
-	if (i->blocks[oprnd_i].type & SHIFT) {
-		encoding |= (i->blocks[oprnd_i].type & BLOCK_TYPE_SHIFT_MASK) & 0x7F;
+	if (block.type & SHIFT) {
+		encoding |= (block.type & BLOCK_TYPE_SHIFT_MASK) & 0x7F;
 
-		if ((i->blocks[oprnd_i].type & BLOCK_TYPE_SHIFT_MASK) != RRX) {
-			char *val_start = i->blocks[oprnd_i].start;
-			for (; val_start < i->blocks[oprnd_i].start + 4 && *val_start != '\n' && *val_start != ';'; val_start++);
+		if ((block.type & BLOCK_TYPE_SHIFT_MASK) != RRX) {
+			char *val_start = block.start;
+			for (; val_start < block.start + 4 && *val_start != '\n' && *val_start != ';'; val_start++);
 			val_start = skipWhitespace(val_start);
 
-			switch (i->blocks[oprnd_i].type & BLOCK_TYPE_MASK) {
+			switch (block.type & BLOCK_TYPE_MASK) {
 				case IMM:
 					uint32_t constant = readConst(val_start, i);
 					if (constant > 32) {
@@ -540,7 +541,7 @@ uint32_t bx(uint32_t, char *oprnd1_start, bool, struct Label *, unsigned long, I
 uint32_t ldrStr(uint32_t inst_offset, char *oprnd1_start, bool is_ldr, struct Label *labels, unsigned long label_tot, Inst *i) {
 	uint32_t encoding = 0;
 	bool p = 1;
-	bool u = 0;
+	bool u = 1;
 	bool w = 0;
 
 	if (i->block_count < 2) {
@@ -563,15 +564,39 @@ uint32_t ldrStr(uint32_t inst_offset, char *oprnd1_start, bool is_ldr, struct La
 		if (i->block_count >= 3) {
 			if (i->blocks[2].type & REG) {
 				printf("LDR/STR register\n");
-				encoding = 0; // FIXME: set to zero to signify unsupported instruction right now; change
+
+				char *c2 = i->blocks[2].start;
+				if (*c2 == '-') {
+					c2++;
+					u = 0;
+				}
+				uint8_t m_reg_data = readReg(c2, 3, false, i);
+				if (m_reg_data & REG_READ_ERR)
+					return 0;
+				encoding |= (1 << 25) | m_reg_data;
+
+				if (i->blocks[2].type & MEM) {
+					p = 1;
+
+					for (; *c2 != '!' && *c2 != '\n' && *c2 != ';'; c2++);
+					if (*c2 == '!') w = 1;
+				}
+
+				if (i->block_count >= 4) { // FIXME: not all support shift, i.e. ldrh, strh, ldrsb, and strsb.
+					encoding |= handleShift(3, i);
+				}
+
+				if (i->block_count > 4) {
+					printf("Load/store register (register) cannot have more than 3 operands: ");
+					lineIssue(i->line);
+				}
 			} else if (i->blocks[2].type & IMM) {
 				printf("LDR/STR immediate\n");
 
 				uint32_t constant = readConst(i->blocks[2].start, i);
 				if (constant >= 1 << 31) {
 					constant = 0 - constant;
-				} else {
-					u = 1;
+					u = 0;
 				}
 
 				uint16_t imm = imm12(constant, i); // FIXME: not all use imm12, i.e. ldrh, strh, ldrsb, and strsb. need to differentiate. maybe secondary bool instead of is_ldr, set to flag this, then, to check is_ldr, go to skipWhitespace(i->blocks[0].start) and check char for 'l'
@@ -586,7 +611,7 @@ uint32_t ldrStr(uint32_t inst_offset, char *oprnd1_start, bool is_ldr, struct La
 				}
 
 				if (i->block_count > 3) {
-					printf("Load/store register immediate cannot have more than 3 operands: ");
+					printf("Load/store register (immediate) cannot have more than 3 operands: ");
 					lineIssue(i->line);
 				}
 			} else {
@@ -1025,13 +1050,15 @@ int main(int argc, char **argv) {
 							case '%':
 								blocks[count_blocks - 1].type = track_operand_state == REGULAR ? IMM : MEM_IMM;
 								break;
-							case 'r':
-								if (*(c + 1) >= '0' && *(c + 1) <= '9') {
-									blocks[count_blocks - 1].type = track_operand_state == REGULAR ? REG : MEM_REG;
-									break;
-								}
-								// Fall through otherwise
 							default:
+								if (*c == 'r' || (*c == '-' && *(c + 1) == 'r')) {
+									int reg_offset = 1 + (*c == '-');
+									if (*(c + reg_offset) >= '0' && *(c + reg_offset) <= '9') {
+										blocks[count_blocks - 1].type = track_operand_state == REGULAR ? REG : MEM_REG;
+										break;
+									}
+								}
+
 								blocks[count_blocks - 1].type = LBL;
 
 								char c3[] = {0, 0, 0};
