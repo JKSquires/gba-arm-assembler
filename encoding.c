@@ -366,7 +366,7 @@ uint32_t ldrStr(uint32_t inst_offset, char *oprnd1_start, bool h_sh_sb, struct L
 		if (!h_sh_sb) {
 			encoding |= val;
 		} else {
-			encoding |= ((val & 0xF0) << 8) | (val & 0x0F);
+			encoding |= (1 << 22) | ((val & 0xF0) << 4) | (val & 0x0F);
 		}
 
 		p = 1;
