@@ -1,3 +1,5 @@
+#define ENCODINGS_COUNT 47
+#define NOP_ENCODING_INDEX 25
 #define REG_READ_ERR (1 << 7)
 #define REG_READ_COUNT_OFFSET 4
 #define REG_READ_COUNT_MASK (0x7 << REG_READ_COUNT_OFFSET)
@@ -644,13 +646,14 @@ InstEncoding *createEncodings() {
 	encodings[36] =	(InstEncoding){ldmStm,					"stm",		0x08000000,	3,	false,	ADDRESSING_MODE};
 	encodings[37] =	(InstEncoding){ldrStr,					"str",		0x04000000,	3,	false,	DATA_SIZE};
 	encodings[38] =	(InstEncoding){rdRnOprnd2,				"sub",		0x00400000,	3,	false,	SET_FLAGS};
-	encodings[39] =	(InstEncoding){swi,						"swi",		0x0F000000,	3,	false,	COND_ONLY};
-	encodings[40] =	(InstEncoding){unsupportedInstruction,	"swp",		0x00000000,	3,	false,	BYTE_SIZE};
-	encodings[41] =	(InstEncoding){rxOprnd2,				"teq",		0x01300000,	3,	true,	COND_ONLY};
-	encodings[42] =	(InstEncoding){rxOprnd2,				"tst",		0x01100000,	3,	true,	COND_ONLY};
-	encodings[43] =	(InstEncoding){und,						"und",		0x07F000F0,	3,	false,	COND_ONLY};
-	encodings[44] =	(InstEncoding){rxRxRxRx,				"umlal",	0x00A00090,	5,	true,	SET_FLAGS};
-	encodings[45] =	(InstEncoding){rxRxRxRx,				"umull",	0x00800090,	5,	true,	SET_FLAGS};
+	encodings[39] = (InstEncoding){swi,						"svc",		0x0F000000,	3,	false,	COND_ONLY};
+	encodings[40] =	(InstEncoding){swi,						"swi",		0x0F000000,	3,	false,	COND_ONLY};
+	encodings[41] =	(InstEncoding){unsupportedInstruction,	"swp",		0x01000090,	3,	false,	BYTE_SIZE};
+	encodings[42] =	(InstEncoding){rxOprnd2,				"teq",		0x01300000,	3,	true,	COND_ONLY};
+	encodings[43] =	(InstEncoding){rxOprnd2,				"tst",		0x01100000,	3,	true,	COND_ONLY};
+	encodings[44] =	(InstEncoding){und,						"und",		0x07F000F0,	3,	false,	COND_ONLY};
+	encodings[45] =	(InstEncoding){rxRxRxRx,				"umlal",	0x00A00090,	5,	true,	SET_FLAGS};
+	encodings[46] =	(InstEncoding){rxRxRxRx,				"umull",	0x00800090,	5,	true,	SET_FLAGS};
 
 	return encodings;
 }

@@ -4,8 +4,6 @@
 #include <stdlib.h>
 
 
-#define ENCODINGS_COUNT 46
-#define NOP_ENCODING_INDEX 25
 #define MAX_INSTRUCTION_BLOCKS 17
 #define BLOCK_TYPE_MASK 7 // TODO: reconsider if needed
 #define BLOCK_TYPE_GROUP_MASK (~BLOCK_TYPE_MASK) // "

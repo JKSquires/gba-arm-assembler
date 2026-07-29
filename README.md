@@ -108,5 +108,6 @@ Pop Multiple Registers | `pop{<cond>} <register_list>` | `pop {r0-r2, r4, r14}`
 Push Multiple Registers | `push{<cond>} <register_list>` | `push {r0-r2, r4, r14}`
 Rotate Right | `ror{<cond>}{s} <Rd>, <Rm>, <oprnd2>` | `ror r0, r0, #4` / `rorne r2,r4,r3`
 Rotate Right with Extend | `rrx{<cond>}{s} <Rd>, <Rm>` | `rrx r2, r1`
+Supervisor Call | `svc{<cond>} <imm24>` | `svc $250000`
 Generate Undefined Instruction | `und{<cond>} {#expr}` | `und` / `und #1234`
 
