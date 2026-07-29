@@ -73,6 +73,9 @@ Load Halfword / Signed Halfword / Signed Byte (Literal) | `ldr{<cond>}<h/sh/sb> 
 Load Halfword / Signed Halfword / Signed Byte (Register) | `ldr{cond}<h/sh/sb> <Rt>, [<Rn>, +/-<Rm>]{!}` / `ldr{cond}<h/sh/sb> <Rt>, [<Rn>], +/-<Rm>` | `ldrh r6, [r2, r3]` / `ldreqh r7, [r1, -r2]!` / `ldrsh r0, [r4], r2`
 Multiply Accumulate | `mla{<cond>}{s} <Rd>, <Rn>, <Rm>, <Ra>` | `mla r0, r0, r1, r2`
 Move | `mov{<cond>}{s} <Rd>, <oprnd2> {, <shift>}` | `mov r0, r2` / `mov r8,$6000000` / `moveqs r5, r3, lsr #3`
+Move to Register from Special Register | `mrs{<cond>} <Rd>, <PSR>` | `mrs r3, CPSR` / `mrseq r6, SPSR`
+Move to Special Register (Immediate) | `msr{<cond>} <PSR>{_<field_mask>}, <imm12>` | `msr CPSR, #6` / `msrne CPSR_xf, %100111101101000` / `msr SPSR_cxsf, $EF`
+Move to Special Register (Register) | `msr{<cond>} <PSR>{_<field_mask>}, <Rn>` | `msr SPSR, r2` / `msrne CPSR_cxs, r7` / `msr SPSR_cx, r0`
 Multiply | `mul{<cond>}{s} <Rd>, <Rn>, <Rm>` | `mul r0, r0, r1`
 Move Not | `mvn{<cond>}{s} <Rd>, <oprnd2> {, <shift>}` | `mvn r0, r2` / `mvn r8,$6000000` / `mvneqs r5, r3, lsr #3`
 Bitwise Or | `orr{<cond>}{s} <Rd>, <Rn>, <oprnd2> {, <shift>}` | `orr r0, r0, r1` / `orr r3, r12, #127` / `orr r2, r3, r4, asr r5`

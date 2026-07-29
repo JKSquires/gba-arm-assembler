@@ -442,7 +442,7 @@ int main(int argc, char **argv) {
 
 							if ((*c == 'c' || *c == 's') && (getLowerChar(*(c + 1)) == 'p' && getLowerChar(*(c + 2)) == 's' && getLowerChar(*(c + 3)) == 'r')) {
 								char after_psr = *(c + 4);
-								if (after_psr == '\n' || after_psr == ' ' || after_psr == '\t' || after_psr == ';') {
+								if (after_psr == '_' || after_psr == '\n' || after_psr == ' ' || after_psr == '\t' || after_psr == ';') {
 									blocks[count_blocks - 1].type = PSR;
 									goto endDetermineBlock;
 								}

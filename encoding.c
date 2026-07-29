@@ -3,6 +3,8 @@
 #define REG_READ_ERR (1 << 7)
 #define REG_READ_COUNT_OFFSET 4
 #define REG_READ_COUNT_MASK (0x7 << REG_READ_COUNT_OFFSET)
+#define PSR_FIELD_OFFSET 1
+#define PSR_FIELD_MASK (0xF << PSR_FIELD_OFFSET)
 
 
 uint8_t readReg(char *reg, uint8_t oprnd_num, Inst *i) {
@@ -29,7 +31,28 @@ uint8_t readReg(char *reg, uint8_t oprnd_num, Inst *i) {
 
 	data |= ((c - reg) << REG_READ_COUNT_OFFSET) & REG_READ_COUNT_MASK;
 
-	return data; // register num is &0xF
+	return data; // register num is data & 0xF
+}
+
+uint8_t readPSR(char *psr, uint8_t oprnd_num, Inst *i) {
+	uint8_t data = PSR_FIELD_MASK | (*psr == 's');
+
+	if ((*psr != 's' && *psr != 'c') || *(psr + 1) != 'p' || *(psr + 2) != 's' || *(psr + 3) != 'r') {
+		printf("Issue reading program status register: ");
+		lineIssue(i->line);
+		return REG_READ_ERR;
+	}
+
+	if (*(psr + 4) == '_') {
+		data ^= PSR_FIELD_MASK;
+
+		for (int f = 5; *(psr + f) >= 'a' && *(psr + f) <= 'z' && f < (5 + 4); f++) {
+			char c = *(psr + f);
+			data |= ((c == 'c') << PSR_FIELD_OFFSET) | ((c == 'x') << (1 + PSR_FIELD_OFFSET)) | ((c == 's') << (2 + PSR_FIELD_OFFSET)) | ((c == 'f') << (3 + PSR_FIELD_OFFSET));
+		}
+	}
+
+	return data; // data & 1 = psr: 0: CPSR; 1: SPSR. (data & PSR_FIELD_MASK) >> PSR_FIELD_OFFSET = field_mask
 }
 
 uint16_t readRegList(int start_block_i, Inst *i) {
@@ -419,7 +442,7 @@ uint32_t ldrStr(uint32_t inst_offset, char *oprnd1_start, bool h_sh_sb, struct L
 		encoding |= (n_reg_data & 0xF) << 16;
 
 		if (i->block_count >= 3) {
-			if (!(i->blocks[2].type ^ REG)) {
+			if ((i->blocks[2].type & BLOCK_TYPE_MASK) == REG) {
 				char *c2 = i->blocks[2].start;
 				if (*c2 == '-') {
 					c2++;
@@ -450,7 +473,7 @@ uint32_t ldrStr(uint32_t inst_offset, char *oprnd1_start, bool h_sh_sb, struct L
 					printf("Load/store halfword/signed halfword/signed byte (register) cannot have more than 3 operands: ");
 					lineIssue(i->line);
 				}
-			} else if (!(i->blocks[2].type ^ IMM)) {
+			} else if ((i->blocks[2].type & BLOCK_TYPE_MASK) == IMM) {
 				uint32_t constant = readConst(i->blocks[2].start, i);
 				if (constant >= 1 << 31) {
 					constant = 0 - constant;
@@ -536,6 +559,59 @@ uint32_t lsl(uint32_t, char *oprnd1_start, bool, struct Label *, unsigned long, 
 
 uint32_t lsr(uint32_t, char *oprnd1_start, bool, struct Label *, unsigned long, Inst *i) {
 	return shiftPseudoInst(oprnd1_start, LSR, i);
+}
+
+uint32_t mrs(uint32_t, char *oprnd1_start, bool, struct Label *, unsigned long, Inst *i) {
+	uint32_t encoding = 0;
+
+	uint8_t d_reg_data = readReg(oprnd1_start, 1, i);
+	if (d_reg_data & REG_READ_ERR)
+		return 0;
+	encoding |= (d_reg_data & 0xF) << 12;
+
+	if (i->block_count != 2) {
+		printf("Move to register from special register requires 2 operands: ");
+		lineIssue(i->line);
+		return 0;
+	}
+
+	uint8_t psr_data = readPSR(i->blocks[1].start, 2, i);
+	if (psr_data & REG_READ_ERR)
+		return 0;
+	encoding |= (psr_data & 1) << 22;
+
+	return encoding;
+}
+
+uint32_t msr(uint32_t, char *oprnd1_start, bool, struct Label *, unsigned long, Inst *i) {
+	uint32_t encoding = 0;
+
+	uint8_t psr_data = readPSR(oprnd1_start, 1, i);
+	if (psr_data & REG_READ_ERR)
+		return 0;
+	encoding |= ((psr_data & 1) << 22) | ((psr_data & PSR_FIELD_MASK) << (16 - PSR_FIELD_OFFSET));
+
+	if (i->block_count != 2) {
+		printf("Move to special register requires 2 operands: ");
+		lineIssue(i->line);
+		return 0;
+	}
+
+	if (i->blocks[1].type == REG) {
+		printf("MSR REG\n");
+		uint8_t n_reg_data = readReg(i->blocks[1].start, 1, i);
+		if (n_reg_data & REG_READ_ERR)
+			return 0;
+		encoding |= n_reg_data & 0xF;
+	} else {
+		printf("MSR IMM\n");
+		uint32_t constant = readConst(i->blocks[1].start, i);
+		uint16_t imm = imm12(constant, i);
+
+		encoding |= (1 << 25) | (imm & 0xFFF);
+	}
+
+	return encoding;
 }
 
 uint32_t nop(uint32_t, char *, bool, struct Label *, unsigned long, Inst *) {
@@ -658,8 +734,8 @@ InstEncoding *createEncodings() {
 	encodings[17] =	(InstEncoding){lsr,						"lsr",		0x00000000,	3,	false,	SET_FLAGS};
 	encodings[18] =	(InstEncoding){rxRxRxRx,				"mla",		0x00200090,	3,	false,	SET_FLAGS};
 	encodings[19] =	(InstEncoding){rxOprnd2,				"mov",		0x01A00000,	3,	false,	SET_FLAGS};
-	encodings[20] =	(InstEncoding){unsupportedInstruction,	"mrs",		0x00000000,	3,	false,	COND_ONLY};
-	encodings[21] =	(InstEncoding){unsupportedInstruction,	"msr",		0x00000000,	3,	false,	COND_ONLY};
+	encodings[20] =	(InstEncoding){mrs,						"mrs",		0x010F0000,	3,	false,	COND_ONLY};
+	encodings[21] =	(InstEncoding){msr,						"msr",		0x0120F000,	3,	false,	COND_ONLY};
 	encodings[22] =	(InstEncoding){rdRnRm,					"mul",		0x00000090,	3,	false,	SET_FLAGS};
 	encodings[23] =	(InstEncoding){rxOprnd2,				"mvn",		0x01E00000,	3,	false,	SET_FLAGS};
 	encodings[24] =	(InstEncoding){unsupportedInstruction,	"neg",		0x00000000,	3,	false,	COND_ONLY};
