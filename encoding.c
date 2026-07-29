@@ -587,8 +587,39 @@ uint32_t swi(uint32_t, char *oprnd1_start, bool, struct Label *, unsigned long, 
 	return imm24;
 }
 
-uint32_t und(uint32_t, char *oprnd1_start, bool, struct Label *, unsigned long, Inst *i) {
+uint32_t swp(uint32_t, char *oprnd1_start, bool, struct Label *, unsigned long, Inst *i) {
 	uint32_t encoding = 0;
+
+	if (i->block_count != 3) {
+		printf("Swap requires exactly 3 operands: ");
+		lineIssue(i->line);
+		return 0;
+	}
+
+	uint8_t t_reg_data = readReg(oprnd1_start, 1, i);
+	if (t_reg_data & REG_READ_ERR)
+		return 0;
+	encoding |= (t_reg_data & 0xF) << 12;
+
+	uint8_t t2_reg_data = readReg(i->blocks[1].start, 2, i);
+	if (t2_reg_data & REG_READ_ERR)
+		return 0;
+	encoding |= t2_reg_data & 0xF;
+
+	uint8_t n_reg_data = readReg(i->blocks[2].start, 3, i);
+	if (n_reg_data & REG_READ_ERR)
+		return 0;
+	encoding |= (n_reg_data & 0xF) << 16;
+
+	if (i->blocks[2].type != MEM_REG) {
+		printf("Swap operand 3 must be addressing: ");
+		lineIssue(i->line);
+	}
+
+	return encoding;
+}
+
+uint32_t und(uint32_t, char *oprnd1_start, bool, struct Label *, unsigned long, Inst *i) {
 	uint16_t expr = 0;
 	if (*oprnd1_start != '\n' && *oprnd1_start != ';') {
 		uint32_t constant = readConst(oprnd1_start, i);
@@ -600,7 +631,7 @@ uint32_t und(uint32_t, char *oprnd1_start, bool, struct Label *, unsigned long, 
 		expr = (uint16_t)constant;
 	}
 
-	return encoding | ((expr & 0xFFF0) << 4) | expr & 0xF;
+	return ((expr & 0xFFF0) << 4) | expr & 0xF;
 }
 
 
@@ -648,7 +679,7 @@ InstEncoding *createEncodings() {
 	encodings[38] =	(InstEncoding){rdRnOprnd2,				"sub",		0x00400000,	3,	false,	SET_FLAGS};
 	encodings[39] = (InstEncoding){swi,						"svc",		0x0F000000,	3,	false,	COND_ONLY};
 	encodings[40] =	(InstEncoding){swi,						"swi",		0x0F000000,	3,	false,	COND_ONLY};
-	encodings[41] =	(InstEncoding){unsupportedInstruction,	"swp",		0x01000090,	3,	false,	BYTE_SIZE};
+	encodings[41] =	(InstEncoding){swp,						"swp",		0x01000090,	3,	false,	BYTE_SIZE};
 	encodings[42] =	(InstEncoding){rxOprnd2,				"teq",		0x01300000,	3,	true,	COND_ONLY};
 	encodings[43] =	(InstEncoding){rxOprnd2,				"tst",		0x01100000,	3,	true,	COND_ONLY};
 	encodings[44] =	(InstEncoding){und,						"und",		0x07F000F0,	3,	false,	COND_ONLY};
