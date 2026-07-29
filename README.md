@@ -1,8 +1,14 @@
-# GBA ARM Assembler
+# Game Boy Advance ARM Assembler
 
-I don't know what I'm doing so I'm learning.
+A simple purpose-built ARM assembler targeting the Game Boy Advance.
 
-I just know that I'm going to look back at this code in the future and think, "wow was I bad at programming!"
+---
+
+## Usage
+
+```sh
+gbaaa <input ASM file> [output GBA file]
+```
 
 ---
 
@@ -31,6 +37,8 @@ gcc main.c
 - *Instruction constants* must be prefixed with one of the following characters that determines the constant's base: `$` (hexadecimal; base-16), `#` (decimal; base-10), or `%` (binary; base-2).
 - *Instruction operands* must be seperated by single commas (`,`) and can have any number of spaces or tabs between them.
 - *Directive operands* do not necessarily need to be seperated by commas, but must be seperated by at least one non-alphanumeric character (e.g. comma, space, tab, underscore, etc.) with the exception of the following characters: `$`, `#`, `%`, and `;`.
+
+---
 
 ## Supported Assembler Directives
 
