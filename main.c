@@ -59,6 +59,7 @@ enum BlockType { // TODO: Use the block type building format used here to format
 	REG = 2,
 	LBL = 3,
 	IMM = 4,
+	PSR = 5,
 	SHIFT = 1 << 3,
 	MEM = 1 << 4,
 	LST = 1 << 7,
@@ -428,61 +429,64 @@ int main(int argc, char **argv) {
 
 					enum BlockType block_type = blocks[count_blocks - 1].type;
 					if (block_type == UNKNOWN_BLOCK) {
-						switch (*c) {
-							case '$': // fall through
-							case '#': // fall through
-							case '%':
-								blocks[count_blocks - 1].type = track_operand_state == REGULAR ? IMM : MEM_IMM;
-								break;
-							default:
-								if (*c == 'r' || (*c == '-' && *(c + 1) == 'r')) {
-									int reg_offset = 1 + (*c == '-');
-									if (*(c + reg_offset) >= '0' && *(c + reg_offset) <= '9') {
-										blocks[count_blocks - 1].type = track_operand_state == REGULAR ? REG : MEM_REG;
-										break;
-									}
+						if (*c == '$' || *c == '#' || *c == '%') {
+							blocks[count_blocks - 1].type = track_operand_state == REGULAR ? IMM : MEM_IMM;
+						} else {
+							if (*c == 'r' || (*c == '-' && getLowerChar(*(c + 1)) == 'r')) {
+								int reg_offset = 1 + (*c == '-');
+								if (*(c + reg_offset) >= '0' && *(c + reg_offset) <= '9') {
+									blocks[count_blocks - 1].type = track_operand_state == REGULAR ? REG : MEM_REG;
+									goto endDetermineBlock;
+								}
+							}
+
+							if ((*c == 'c' || *c == 's') && (getLowerChar(*(c + 1)) == 'p' && getLowerChar(*(c + 2)) == 's' && getLowerChar(*(c + 3)) == 'r')) {
+								char after_psr = *(c + 4);
+								if (after_psr == '\n' || after_psr == ' ' || after_psr == '\t' || after_psr == ';') {
+									blocks[count_blocks - 1].type = PSR;
+									goto endDetermineBlock;
+								}
+							}
+
+							blocks[count_blocks - 1].type = LBL;
+
+							char c3[] = {0, 0, 0};
+							c3[0] = getLowerChar(*c);
+							if (c3[0] != '\n') c3[1] = getLowerChar(*(c + 1));
+							if (c3[1] != '\n') c3[2] = getLowerChar(*(c + 2));
+
+							if (c3[0] == 'l' && c3[1] == 's' && c3[2] == 'l'
+								|| c3[0] == 'l' && c3[1] == 's' && c3[2] == 'r'
+								|| c3[0] == 'a' && c3[1] == 's' && c3[2] == 'r'
+								|| c3[0] == 'r' && c3[1] == 'o' && c3[2] == 'r'
+								|| c3[0] == 'r' && c3[1] == 'r' && c3[2] == 'x') {
+
+								if (c3[0] == 'a' && c3[1] == 's' && c3[2] == 'l') { // handle arithmetic left shift -> logical shift left
+									*c = 'l';
+									blocks[count_blocks - 1].type = LSL;
+								} else if (c3[0] == 'a' && c3[1] == 's' && c3[2] == 'r') {
+									blocks[count_blocks - 1].type = ASR;
+								} else if (c3[0] == 'l' && c3[1] == 's' && c3[2] == 'l') {
+									blocks[count_blocks - 1].type = LSL;
+								} else if (c3[0] == 'l' && c3[1] == 's' && c3[2] == 'r') {
+									blocks[count_blocks - 1].type = LSR;
+								} else if (c3[0] == 'r' && c3[1] == 'o' && c3[2] == 'r') {
+									blocks[count_blocks - 1].type = ROR;
+								} else if (c3[0] == 'r' && c3[1] == 'r' && c3[2] == 'x') {
+									blocks[count_blocks - 1].type = RRX | SHIFT;
 								}
 
-								blocks[count_blocks - 1].type = LBL;
+								char *skip_shift_whitespace = skipWhitespace(c + 3);
+								if (skip_shift_whitespace == c + 3) goto endDetermineBlock;
 
-								char c3[] = {0, 0, 0};
-								c3[0] = getLowerChar(*c);
-								if (c3[0] != '\n') c3[1] = getLowerChar(*(c + 1));
-								if (c3[1] != '\n') c3[2] = getLowerChar(*(c + 2));
-
-								if (c3[0] == 'l' && c3[1] == 's' && c3[2] == 'l'
-									|| c3[0] == 'l' && c3[1] == 's' && c3[2] == 'r'
-									|| c3[0] == 'a' && c3[1] == 's' && c3[2] == 'r'
-									|| c3[0] == 'r' && c3[1] == 'o' && c3[2] == 'r'
-									|| c3[0] == 'r' && c3[1] == 'r' && c3[2] == 'x') {
-
-									if (c3[0] == 'a' && c3[1] == 's' && c3[2] == 'l') { // handle arithmetic left shift
-										*c = 'l';
-										blocks[count_blocks - 1].type = LSL;
-									} else if (c3[0] == 'a' && c3[1] == 's' && c3[2] == 'r') {
-										blocks[count_blocks - 1].type = ASR;
-									} else if (c3[0] == 'l' && c3[1] == 's' && c3[2] == 'l') {
-										blocks[count_blocks - 1].type = LSL;
-									} else if (c3[0] == 'l' && c3[1] == 's' && c3[2] == 'r') {
-										blocks[count_blocks - 1].type = LSR;
-									} else if (c3[0] == 'r' && c3[1] == 'o' && c3[2] == 'r') {
-										blocks[count_blocks - 1].type = ROR;
-									} else if (c3[0] == 'r' && c3[1] == 'r' && c3[2] == 'x') {
-										blocks[count_blocks - 1].type = RRX | SHIFT;
-									}
-
-									char *skip_shift_whitespace = skipWhitespace(c + 3);
-									if (skip_shift_whitespace == c + 3) break;
-
-									if (*skip_shift_whitespace == '$' || *skip_shift_whitespace == '#' || *skip_shift_whitespace == '%') {
-										blocks[count_blocks - 1].type |= track_operand_state == REGULAR ? SHIFT_IMM : MEM_SHIFT_IMM;
-									} else {
-										blocks[count_blocks - 1].type |= track_operand_state == REGULAR ? SHIFT_REG : MEM_SHIFT_REG;
-									}
+								if (*skip_shift_whitespace == '$' || *skip_shift_whitespace == '#' || *skip_shift_whitespace == '%') {
+									blocks[count_blocks - 1].type |= track_operand_state == REGULAR ? SHIFT_IMM : MEM_SHIFT_IMM;
+								} else {
+									blocks[count_blocks - 1].type |= track_operand_state == REGULAR ? SHIFT_REG : MEM_SHIFT_REG;
 								}
-
-								break;
+							}
 						}
+						endDetermineBlock:
 					}
 
 					break;

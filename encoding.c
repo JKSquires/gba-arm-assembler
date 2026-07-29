@@ -193,7 +193,7 @@ uint32_t rdRnOprnd2(uint32_t, char *oprnd1_start, bool, struct Label *, unsigned
 		return 0;
 	encoding |= (n_reg_data & 0xF) << 16;
 
-	if (i->blocks[2].type & REG) {
+	if (i->blocks[2].type == REG) {
 		uint8_t m_reg_data = readReg(i->blocks[2].start, 3, i);
 		if (m_reg_data & REG_READ_ERR)
 			return 0;
@@ -259,7 +259,7 @@ uint32_t rxOprnd2(uint32_t, char *oprnd1_start, bool rx_is_rn, struct Label *, u
 
 	encoding |= (reg1_data & 0xF) << (12 + (4 * rx_is_rn));
 
-	if (i->blocks[1].type & REG) {
+	if (i->blocks[1].type == REG) {
 		uint8_t reg2_data = readReg(i->blocks[1].start, 2, i);
 		if (reg2_data & REG_READ_ERR)
 			return 0;
@@ -419,7 +419,7 @@ uint32_t ldrStr(uint32_t inst_offset, char *oprnd1_start, bool h_sh_sb, struct L
 		encoding |= (n_reg_data & 0xF) << 16;
 
 		if (i->block_count >= 3) {
-			if (i->blocks[2].type & REG) {
+			if (!(i->blocks[2].type ^ REG)) {
 				char *c2 = i->blocks[2].start;
 				if (*c2 == '-') {
 					c2++;
@@ -450,7 +450,7 @@ uint32_t ldrStr(uint32_t inst_offset, char *oprnd1_start, bool h_sh_sb, struct L
 					printf("Load/store halfword/signed halfword/signed byte (register) cannot have more than 3 operands: ");
 					lineIssue(i->line);
 				}
-			} else if (i->blocks[2].type & IMM) {
+			} else if (!(i->blocks[2].type ^ IMM)) {
 				uint32_t constant = readConst(i->blocks[2].start, i);
 				if (constant >= 1 << 31) {
 					constant = 0 - constant;
