@@ -30,6 +30,38 @@ uint8_t readReg(char *reg, uint8_t oprnd_num, Inst *i) {
 	return data; // register num is &0xF
 }
 
+uint16_t readRegList(int start_block_i, Inst *i) {
+	uint16_t regs = 0;
+
+	for (int block_i = start_block_i; block_i < i->block_count; block_i++) {
+		struct InstructionBlock block = i->blocks[block_i];
+
+		if (block.type != LST_REG) {
+			printf("Load/store multiple cannot have any operands past the register list: ");
+			lineIssue(i->line);
+			return 0;
+		}
+
+		uint8_t reg1_data = readReg(block.start, block_i + 1, i);
+		if (reg1_data & REG_READ_ERR)
+			return 0;
+
+		regs |= 1 << (reg1_data & 0xF);
+		char *end_of_reg1 = block.start + ((reg1_data & REG_READ_COUNT_MASK) >> REG_READ_COUNT_OFFSET);
+		if (*(end_of_reg1) == '-') {
+			uint8_t reg2_data = readReg(end_of_reg1 + 1, block_i + 1, i);
+			if (reg2_data & REG_READ_ERR)
+				return 0;
+
+			for (int reg_num = (reg1_data & 0xF) + 1 ; reg_num <= (reg2_data & 0xF); reg_num++) {
+				regs |= 1 << reg_num;
+			}
+		}
+	}
+
+	return regs;
+}
+
 uint32_t readConst(char *constant, Inst *i) {
 	uint32_t data = 0;
 	bool neg = false;
@@ -295,6 +327,7 @@ uint32_t shiftPseudoInst(char *oprnd1_start, enum BlockType type, Inst *i) {
 	return 0x01A00000 | rxOprnd2(0, oprnd1_start, false, NULL, 0, i);
 }
 
+
 uint32_t asr(uint32_t, char *oprnd1_start, bool, struct Label *, unsigned long, Inst *i) {
 	return shiftPseudoInst(oprnd1_start, ASR, i);
 }
@@ -355,31 +388,7 @@ uint32_t ldmStm(uint32_t, char *oprnd1_start, bool, struct Label *, unsigned lon
 		return 0;
 	}
 
-	for (int block_i = 1; block_i < i->block_count; block_i++) {
-		struct InstructionBlock block = i->blocks[block_i];
-
-		if (block.type != LST_REG) {
-			printf("Load/store multiple cannot have any operands past the register list: ");
-			lineIssue(i->line);
-			return 0;
-		}
-
-		uint8_t reg1_data = readReg(block.start, block_i + 1, i);
-		if (reg1_data & REG_READ_ERR)
-			return 0;
-
-		encoding |= 1 << (reg1_data & 0xF);
-		char *end_of_reg1 = block.start + ((reg1_data & REG_READ_COUNT_MASK) >> REG_READ_COUNT_OFFSET);
-		if (*(end_of_reg1) == '-') {
-			uint8_t reg2_data = readReg(end_of_reg1 + 1, block_i + 1, i);
-			if (reg2_data & REG_READ_ERR)
-				return 0;
-
-			for (int reg_num = (reg1_data & 0xF) + 1 ; reg_num <= (reg2_data & 0xF); reg_num++) {
-				encoding |= 1 << reg_num;
-			}
-		}
-	}
+	encoding |= readRegList(1, i);
 
 	return encoding;
 }
@@ -531,6 +540,18 @@ uint32_t nop(uint32_t, char *, bool, struct Label *, unsigned long, Inst *) {
 	return 0x00000000;
 }
 
+uint32_t popPush(uint32_t, char *oprnd1_start, bool, struct Label *, unsigned long, Inst *i) {
+	struct InstructionBlock constructed_blocks[i->block_count];
+	constructed_blocks[0] = (struct InstructionBlock){oprnd1_start, LST_REG};
+	for (int ii = 1; ii < i->block_count; ii++) {
+		constructed_blocks[ii] = (struct InstructionBlock){i->blocks[ii].start, i->blocks[ii].type};
+	}
+
+	Inst constructed_i = (Inst){i->line, constructed_blocks, i->block_count};
+
+	return readRegList(0, &constructed_i);
+}
+
 uint32_t ror(uint32_t, char *oprnd1_start, bool, struct Label *, unsigned long, Inst *i) {
 	return shiftPseudoInst(oprnd1_start, ROR, i);
 }
@@ -542,18 +563,14 @@ uint32_t rrx(uint32_t, char *oprnd1_start, bool, struct Label *, unsigned long, 
 		return 0;
 	}
 
-	// FIXME: create a more robust instruction-building system for pseudo-instructions
-	struct InstructionBlock *old_blocks = i->blocks;
-	i->blocks = malloc(3 * sizeof (struct InstructionBlock));
-	for (int ibi = 0; ibi < 2; ibi++) {
-		i->blocks[ibi] = old_blocks[ibi];
-	}
-	i->blocks[2] = (struct InstructionBlock){"\n", REG};
-	i->block_count++;
+	struct InstructionBlock constructed_blocks[3];
+	constructed_blocks[0] = (struct InstructionBlock){i->blocks[0].start, i->blocks[0].type};
+	constructed_blocks[1] = (struct InstructionBlock){i->blocks[1].start, i->blocks[1].type};
+	constructed_blocks[2] = (struct InstructionBlock){"\n", REG};
 
-	free(old_blocks);
+	Inst constructed_i = (Inst){i->line, constructed_blocks, 3};
 
-	return shiftPseudoInst(oprnd1_start, RRX, i);
+	return shiftPseudoInst(oprnd1_start, RRX, &constructed_i);
 }
 
 uint32_t swi(uint32_t, char *oprnd1_start, bool, struct Label *, unsigned long, Inst *i) {
@@ -583,6 +600,7 @@ uint32_t und(uint32_t, char *oprnd1_start, bool, struct Label *, unsigned long, 
 
 	return encoding | ((expr & 0xFFF0) << 4) | expr & 0xF;
 }
+
 
 InstEncoding *createEncodings() {
 	InstEncoding *encodings = malloc(ENCODINGS_COUNT * sizeof *encodings);
@@ -614,8 +632,8 @@ InstEncoding *createEncodings() {
 	encodings[24] =	(InstEncoding){unsupportedInstruction,	"neg",		0x00000000,	3,	false,	COND_ONLY};
 	encodings[25] =	(InstEncoding){nop,						"nop",		0x00000000,	3,	false,	NOP};
 	encodings[26] =	(InstEncoding){rdRnOprnd2,				"orr",		0x01800000,	3,	false,	SET_FLAGS};
-	encodings[27] =	(InstEncoding){unsupportedInstruction,	"pop",		0x00000000,	3,	false,	COND_ONLY};
-	encodings[28] =	(InstEncoding){unsupportedInstruction,	"push",		0x00000000,	4,	false,	COND_ONLY};
+	encodings[27] =	(InstEncoding){popPush,					"pop",		0x08BD0000,	3,	false,	COND_ONLY};
+	encodings[28] =	(InstEncoding){popPush,					"push",		0x092D0000,	4,	false,	COND_ONLY};
 	encodings[29] =	(InstEncoding){ror,						"ror",		0x00000000,	3,	false,	SET_FLAGS};
 	encodings[30] =	(InstEncoding){rrx,						"rrx",		0x00000000,	3,	false,	SET_FLAGS};
 	encodings[31] =	(InstEncoding){rdRnOprnd2,				"rsb",		0x00600000,	3,	false,	SET_FLAGS};

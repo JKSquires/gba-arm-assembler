@@ -104,6 +104,8 @@ Arithmetic Shift Right | `asr{<cond>}{s} <Rd>, <Rm>, <oprnd2>` | `asr r0, r0, #4
 Logical Shift Left | `lsl{<cond>}{s} <Rd>, <Rm>, <oprnd2>` | `lsl r0, r0, #4` / `lslne r2,r4,r3`
 Logical Shift Right | `lsr{<cond>}{s} <Rd>, <Rm>, <oprnd2>` | `lsr r0, r0, #4` / `lsrne r2,r4,r3`
 No Operation | `nop` | `nop`
+Pop Multiple Registers | `pop{<cond>} <register_list>` | `pop {r0-r2, r4, r14}`
+Push Multiple Registers | `push{<cond>} <register_list>` | `push {r0-r2, r4, r14}`
 Rotate Right | `ror{<cond>}{s} <Rd>, <Rm>, <oprnd2>` | `ror r0, r0, #4` / `rorne r2,r4,r3`
 Rotate Right with Extend | `rrx{<cond>}{s} <Rd>, <Rm>` | `rrx r2, r1`
 Generate Undefined Instruction | `und{<cond>} {#expr}` | `und` / `und #1234`

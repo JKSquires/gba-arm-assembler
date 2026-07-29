@@ -120,7 +120,7 @@ struct InstructionEncoding {
 };
 
 struct Instruction {
-	struct Line *line; // TODO: refactor to better way than a loop like this where lines have instructions which store the line etc...
+	struct Line *line;
 	struct InstructionBlock *blocks;
 	uint8_t block_count;
 };
