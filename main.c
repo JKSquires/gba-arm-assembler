@@ -6,9 +6,7 @@
 
 #define ENCODINGS_COUNT 46
 #define NOP_ENCODING_INDEX 25
-#define MAX_INSTRUCTION_BLOCKS 4 // FIXME: 4 is the max number of blocks a valid instruction can have excluding in multiple register operands/blocks (e.g. {r0, r3-r5, r10}). We need to figure out how we want to deal with those. Might be easiest to just count the max number including these
-#define REG_READ_ERR (1 << 7)
-#define REG_READ_WRITEBACK (1 << 4)
+#define MAX_INSTRUCTION_BLOCKS 17
 #define BLOCK_TYPE_MASK 7 // TODO: reconsider if needed
 #define BLOCK_TYPE_GROUP_MASK (~BLOCK_TYPE_MASK) // "
 #define SHIFT_SHIFT 5
@@ -65,7 +63,7 @@ enum BlockType { // TODO: Use the block type building format used here to format
 	IMM = 4,
 	SHIFT = 1 << 3,
 	MEM = 1 << 4,
-	MUL = 1 << 7,
+	LST = 1 << 7,
 	LSL = 0 << SHIFT_SHIFT,
 	LSR = 1 << SHIFT_SHIFT,
 	ASR = 2 << SHIFT_SHIFT,
@@ -78,7 +76,7 @@ enum BlockType { // TODO: Use the block type building format used here to format
 	MEM_IMM = MEM | IMM,
 	MEM_SHIFT_REG = MEM | SHIFT | REG,
 	MEM_SHIFT_IMM = MEM | SHIFT | IMM,
-	MUL_REG = MUL | REG,
+	LST_REG = LST | REG,
 };
 
 enum OperandState {
@@ -190,104 +188,6 @@ void lineIssue(struct Line *line) {
 		printf("%c", *c);
 	}
 	printf("\n\n");
-}
-
-uint8_t readReg(char *reg, uint8_t oprnd_num, bool support_writeback, Inst *i) {
-	uint8_t data = 0;
-
-	if (*reg == '[' || *reg == '{') reg++;
-
-	if (*reg != 'r') {
-		printf("Issue reading register: ");
-		lineIssue(i->line);
-
-		return REG_READ_ERR;
-	}
-
-	char *c = reg + 1;
-	for (; *c >= '0' && *c <= '9'; c++) {
-		data = data * 10 + (*c - '0');
-	}
-	if (data > 15) {
-		printf("Only registers r0-r15 are allowed: ");
-		lineIssue(i->line);
-	}
-	data &= 0xF;
-
-	if (*c == '!') { // TODO: writeback directly on a register is only supported (I think--double check) on ldm/stm kind of thing, so it would be more efficient to manually check then rather than always checking here and having to pass in support_writeback
-		data |= REG_READ_WRITEBACK;
-		c++;
-
-		if (!support_writeback) {
-			printf("Instruction does not support writeback in operand %d: ", oprnd_num);
-			lineIssue(i->line);
-		}
-	}
-
-	return data; // register num is &0xF
-}
-
-uint32_t readConst(char *constant, Inst *i) {
-	uint32_t data = 0;
-	bool neg = false;
-
-	if (*constant == '$' || *constant == '#' || *constant == '%') {
-		enum NumType num_type = *constant == '$' ? HEX :
-								*constant == '#' ? DEC :
-											BIN;
-		if (*(++constant) == '-') {
-			neg = true;
-			constant++;
-		}
-		char *c = constant;
-		for (; (*c >= '0' && *c <= '9') || (getLowerChar(*c) >= 'a' && getLowerChar(*c) <= 'f'); c++) {
-			switch (num_type) {
-				case HEX:
-					data <<= 4;
-					if (*c >= '0' && *c <= '9') {
-						data += *c - '0';
-					} else {
-						data += 10 + (getLowerChar(*c) - 'a');
-					}
-					break;
-				case DEC:
-					if (*c >= '0' && *c <= '9') {
-						data = data * 10 + (*c - '0');
-					} else {
-						printf("Broken decimal literal: ");
-						lineIssue(i->line);
-					}
-					break;
-				case BIN:
-					if (*c == '0' || *c == '1') {
-						data = (data << 1) + (*c - '0');
-					} else {
-						printf("Broken binary literal: ");
-						lineIssue(i->line);
-					}
-					break;
-			}
-		}
-	} else {
-		printf("Issue reading constant/immediate value: ");
-		lineIssue(i->line);
-	}
-
-	return neg ? 0 - data : data;
-}
-
-uint16_t imm12(uint32_t val, Inst *i) {
-	for (int r = 0; r < 32; r += 2) {
-		uint32_t imm8 = (val << r) | (uint32_t)((uint64_t)val >> (32 - r));
-
-		if ((imm8 & 0xFFFFFF00) == 0) {
-			return (r << 7) | imm8;
-		}
-	}
-
-	printf("Cannot create rotation for 12-bit immediate: ");
-	lineIssue(i->line);
-	return 0;
 }
 
 #include "encoding.c"
@@ -481,7 +381,7 @@ int main(int argc, char **argv) {
 
 					if (count_blocks <= MAX_INSTRUCTION_BLOCKS) {
 						c = skipWhitespace(c + 1) - 1;
-						blocks[count_blocks - 1] = (struct InstructionBlock){c + 1, track_operand_state != MULTIPLE ? UNKNOWN_BLOCK : MUL_REG};
+						blocks[count_blocks - 1] = (struct InstructionBlock){c + 1, track_operand_state != MULTIPLE ? UNKNOWN_BLOCK : LST_REG};
 					} else {
 						printf("Too many operands: ");
 						lineIssue(&lines[line_num]);
@@ -513,11 +413,11 @@ int main(int argc, char **argv) {
 					}
 
 					track_operand_state = MULTIPLE;
-					blocks[count_blocks - 1].type = MUL_REG;
+					blocks[count_blocks - 1].type = LST_REG;
 
 					break;
 				case '}':
-					if (blocks[count_blocks - 1].type != MUL_REG) {
+					if (blocks[count_blocks - 1].type != LST_REG) {
 						printf("Broken multiple register operand: ");
 						lineIssue(&lines[line_num]);
 					}
@@ -747,8 +647,7 @@ int main(int argc, char **argv) {
 								case ADDRESSING_MODE: // FIXME: when encoding ldm and sdm in previous section, note that ldm has bit 20 set and stm has bit 20 cleared. this means that we should probably not mask that bit in this section--review
 									//printf("Instruction detected with possible addressing mode\n");
 
-									// TODO: bit 21 is wback, will need to set later if needed for the specific instruction based on operands
-									encoding = (encoding & 0xF02FFFFF) | (1 << 27);
+									encoding = (encoding & 0xF03FFFFF) | (1 << 27);
 
 									switch (last_two[0]) {
 										case 'd':

@@ -1,3 +1,98 @@
+#define REG_READ_ERR (1 << 7)
+#define REG_READ_COUNT_OFFSET 4
+#define REG_READ_COUNT_MASK (0x7 << REG_READ_COUNT_OFFSET)
+
+
+uint8_t readReg(char *reg, uint8_t oprnd_num, Inst *i) {
+	uint8_t data = 0;
+
+	char *r_start = (*reg == '[' || *reg == '{') ? reg + 1 : reg;
+
+	if (*r_start != 'r') {
+		printf("Issue reading register: ");
+		lineIssue(i->line);
+		return REG_READ_ERR;
+	}
+
+	char *c = r_start + 1;
+	for (; *c >= '0' && *c <= '9'; c++) {
+		data = data * 10 + (*c - '0');
+	}
+	if (data > 15) {
+		printf("Only registers r0-r15 are allowed: ");
+		lineIssue(i->line);
+		return REG_READ_ERR;
+	}
+	data &= 0xF;
+
+	data |= ((c - reg) << REG_READ_COUNT_OFFSET) & REG_READ_COUNT_MASK;
+
+	return data; // register num is &0xF
+}
+
+uint32_t readConst(char *constant, Inst *i) {
+	uint32_t data = 0;
+	bool neg = false;
+
+	if (*constant == '$' || *constant == '#' || *constant == '%') {
+		enum NumType num_type = *constant == '$' ? HEX :
+								*constant == '#' ? DEC :
+											BIN;
+		if (*(++constant) == '-') {
+			neg = true;
+			constant++;
+		}
+		char *c = constant;
+		for (; (*c >= '0' && *c <= '9') || (getLowerChar(*c) >= 'a' && getLowerChar(*c) <= 'f'); c++) {
+			switch (num_type) {
+				case HEX:
+					data <<= 4;
+					if (*c >= '0' && *c <= '9') {
+						data += *c - '0';
+					} else {
+						data += 10 + (getLowerChar(*c) - 'a');
+					}
+					break;
+				case DEC:
+					if (*c >= '0' && *c <= '9') {
+						data = data * 10 + (*c - '0');
+					} else {
+						printf("Broken decimal literal: ");
+						lineIssue(i->line);
+					}
+					break;
+				case BIN:
+					if (*c == '0' || *c == '1') {
+						data = (data << 1) + (*c - '0');
+					} else {
+						printf("Broken binary literal: ");
+						lineIssue(i->line);
+					}
+					break;
+			}
+		}
+	} else {
+		printf("Issue reading constant/immediate value: ");
+		lineIssue(i->line);
+	}
+
+	return neg ? 0 - data : data;
+}
+
+uint16_t imm12(uint32_t val, Inst *i) {
+	for (int r = 0; r < 32; r += 2) {
+		uint32_t imm8 = (val << r) | (uint32_t)((uint64_t)val >> (32 - r));
+
+		if ((imm8 & 0xFFFFFF00) == 0) {
+			return (r << 7) | imm8;
+		}
+	}
+
+	printf("Cannot create rotation for 12-bit immediate: ");
+	lineIssue(i->line);
+	return 0;
+}
+
 uint32_t unsupportedInstruction(uint32_t, char *, bool, struct Label *, unsigned long, Inst *i) {
 	printf("Unsupported instruction: ");
 	lineIssue(i->line);
@@ -28,7 +123,7 @@ uint32_t handleShift(uint8_t oprnd_i, Inst *i) {
 
 					break;
 				case REG:
-					uint8_t reg = readReg(val_start, oprnd_i + 1, false, i);
+					uint8_t reg = readReg(val_start, oprnd_i + 1, i);
 					if (reg & REG_READ_ERR)
 						return 0;
 
@@ -54,18 +149,18 @@ uint32_t rdRnOprnd2(uint32_t, char *oprnd1_start, bool, struct Label *, unsigned
 		return 0;
 	}
 
-	uint8_t d_reg_data = readReg(oprnd1_start, 1, false, i);
+	uint8_t d_reg_data = readReg(oprnd1_start, 1, i);
 	if (d_reg_data & REG_READ_ERR)
 		return 0;
 	encoding |= (d_reg_data & 0xF) << 12;
 
-	uint8_t n_reg_data = readReg(i->blocks[1].start, 2, false, i);
+	uint8_t n_reg_data = readReg(i->blocks[1].start, 2, i);
 	if (n_reg_data & REG_READ_ERR)
 		return 0;
 	encoding |= (n_reg_data & 0xF) << 16;
 
 	if (i->blocks[2].type & REG) {
-		uint8_t m_reg_data = readReg(i->blocks[2].start, 3, false, i);
+		uint8_t m_reg_data = readReg(i->blocks[2].start, 3, i);
 		if (m_reg_data & REG_READ_ERR)
 			return 0;
 		encoding |= m_reg_data & 0xF;
@@ -97,17 +192,17 @@ uint32_t rdRnRm(uint32_t, char *oprnd1_start, bool, struct Label *, unsigned lon
 		return 0;
 	}
 
-	uint8_t d_reg_data = readReg(oprnd1_start, 1, false, i);
+	uint8_t d_reg_data = readReg(oprnd1_start, 1, i);
 	if (d_reg_data & REG_READ_ERR)
 		return 0;
 	encoding |= (d_reg_data & 0xF) << 16;
 
-	uint8_t n_reg_data = readReg(i->blocks[1].start, 2, false, i);
+	uint8_t n_reg_data = readReg(i->blocks[1].start, 2, i);
 	if (n_reg_data & REG_READ_ERR)
 		return 0;
 	encoding |= n_reg_data & 0xF;
 
-	uint8_t m_reg_data = readReg(i->blocks[2].start, 3, false, i);
+	uint8_t m_reg_data = readReg(i->blocks[2].start, 3, i);
 	if (m_reg_data & REG_READ_ERR)
 		return 0;
 	encoding |= (m_reg_data & 0xF) << 8;
@@ -124,14 +219,14 @@ uint32_t rxOprnd2(uint32_t, char *oprnd1_start, bool rx_is_rn, struct Label *, u
 		return 0;
 	}
 
-	uint8_t reg1_data = readReg(oprnd1_start, 1, false, i);
+	uint8_t reg1_data = readReg(oprnd1_start, 1, i);
 	if (reg1_data & REG_READ_ERR)
 		return 0;
 
 	encoding |= (reg1_data & 0xF) << (12 + (4 * rx_is_rn));
 
 	if (i->blocks[1].type & REG) {
-		uint8_t reg2_data = readReg(i->blocks[1].start, 2, false, i);
+		uint8_t reg2_data = readReg(i->blocks[1].start, 2, i);
 		if (reg2_data & REG_READ_ERR)
 			return 0;
 
@@ -164,22 +259,22 @@ uint32_t rxRxRxRx(uint32_t, char *oprnd1_start, bool is_long, struct Label *, un
 		return 0;
 	}
 
-	uint8_t reg1_data = readReg(oprnd1_start, 1, false, i);
+	uint8_t reg1_data = readReg(oprnd1_start, 1, i);
 	if (reg1_data & REG_READ_ERR)
 		return 0;
 	encoding |= (reg1_data & 0xF) << (16 - (4 * is_long));
 
-	uint8_t reg2_data = readReg(i->blocks[1].start, 2, false, i);
+	uint8_t reg2_data = readReg(i->blocks[1].start, 2, i);
 	if (reg2_data & REG_READ_ERR)
 		return 0;
 	encoding |= (reg2_data & 0xF) << (16 * is_long);
 
-	uint8_t reg3_data = readReg(i->blocks[2].start, 3, false, i);
+	uint8_t reg3_data = readReg(i->blocks[2].start, 3, i);
 	if (reg3_data & REG_READ_ERR)
 		return 0;
 	encoding |= (reg3_data & 0xF) << (8 * (!is_long));
 
-	uint8_t reg4_data = readReg(i->blocks[3].start, 4, false, i);
+	uint8_t reg4_data = readReg(i->blocks[3].start, 4, i);
 	if (reg4_data & REG_READ_ERR)
 		return 0;
 	encoding |= (reg4_data & 0xF) << (12 - (4 * is_long));
@@ -235,12 +330,56 @@ uint32_t b(uint32_t inst_offset, char *oprnd1_start, bool, struct Label *labels,
 uint32_t bx(uint32_t, char *oprnd1_start, bool, struct Label *, unsigned long, Inst *i) {
 	uint32_t encoding = 0;
 
-	uint8_t reg_data = readReg(oprnd1_start, 1, false, i);
+	uint8_t reg_data = readReg(oprnd1_start, 1, i);
 
 	if (reg_data & REG_READ_ERR)
 		return 0;
 
 	encoding |= reg_data & 0xF;
+
+	return encoding;
+}
+
+uint32_t ldmStm(uint32_t, char *oprnd1_start, bool, struct Label *, unsigned long, Inst *i) {
+	uint32_t encoding = 0;
+
+	uint8_t n_reg_data = readReg(oprnd1_start, 1, i);
+	if (n_reg_data & REG_READ_ERR)
+		return 0;
+	bool writeback = *(oprnd1_start + ((n_reg_data & REG_READ_COUNT_MASK) >> REG_READ_COUNT_OFFSET)) == '!';
+	encoding |= (writeback << 21) | ((n_reg_data & 0xF) << 16);
+
+	if (i->block_count < 2 || i->block_count > 17) {
+		printf("Load/store multiple requires 2-17 operands: ");
+		lineIssue(i->line);
+		return 0;
+	}
+
+	for (int block_i = 1; block_i < i->block_count; block_i++) {
+		struct InstructionBlock block = i->blocks[block_i];
+
+		if (block.type != LST_REG) {
+			printf("Load/store multiple cannot have any operands past the register list: ");
+			lineIssue(i->line);
+			return 0;
+		}
+
+		uint8_t reg1_data = readReg(block.start, block_i + 1, i);
+		if (reg1_data & REG_READ_ERR)
+			return 0;
+
+		encoding |= 1 << (reg1_data & 0xF);
+		char *end_of_reg1 = block.start + ((reg1_data & REG_READ_COUNT_MASK) >> REG_READ_COUNT_OFFSET);
+		if (*(end_of_reg1) == '-') {
+			uint8_t reg2_data = readReg(end_of_reg1 + 1, block_i + 1, i);
+			if (reg2_data & REG_READ_ERR)
+				return 0;
+
+			for (int reg_num = (reg1_data & 0xF) + 1 ; reg_num <= (reg2_data & 0xF); reg_num++) {
+				encoding |= 1 << reg_num;
+			}
+		}
+	}
 
 	return encoding;
 }
@@ -257,13 +396,13 @@ uint32_t ldrStr(uint32_t inst_offset, char *oprnd1_start, bool h_sh_sb, struct L
 		return 0;
 	}
 
-	uint8_t t_reg_data = readReg(oprnd1_start, 1, false, i);
+	uint8_t t_reg_data = readReg(oprnd1_start, 1, i);
 	if (t_reg_data & REG_READ_ERR)
 		return 0;
 	encoding |= (t_reg_data & 0xF) << 12;
 
 	if (i->blocks[1].type == MEM_REG) {
-		uint8_t n_reg_data = readReg(i->blocks[1].start, 2, false, i);
+		uint8_t n_reg_data = readReg(i->blocks[1].start, 2, i);
 		if (n_reg_data & REG_READ_ERR)
 			return 0;
 		encoding |= (n_reg_data & 0xF) << 16;
@@ -275,7 +414,7 @@ uint32_t ldrStr(uint32_t inst_offset, char *oprnd1_start, bool h_sh_sb, struct L
 					c2++;
 					u = 0;
 				}
-				uint8_t m_reg_data = readReg(c2, 3, false, i);
+				uint8_t m_reg_data = readReg(c2, 3, i);
 				if (m_reg_data & REG_READ_ERR)
 					return 0;
 				encoding |= (1 << 25) | m_reg_data;
@@ -462,7 +601,7 @@ InstEncoding *createEncodings() {
 	encodings[11] =	(InstEncoding){rxOprnd2,				"cmn",		0x01700000,	3,	true,	COND_ONLY};
 	encodings[12] =	(InstEncoding){rxOprnd2,				"cmp",		0x01500000,	3,	true,	COND_ONLY};
 	encodings[13] =	(InstEncoding){rdRnOprnd2,				"eor",		0x00200000,	3,	false,	SET_FLAGS};
-	encodings[14] =	(InstEncoding){unsupportedInstruction,	"ldm",		0x00000000,	3,	false,	ADDRESSING_MODE};
+	encodings[14] =	(InstEncoding){ldmStm,					"ldm",		0x08100000,	3,	false,	ADDRESSING_MODE};
 	encodings[15] =	(InstEncoding){ldrStr,					"ldr",		0x04100000,	3,	false,	DATA_SIZE};
 	encodings[16] =	(InstEncoding){lsl,						"lsl",		0x00000000,	3,	false,	SET_FLAGS};
 	encodings[17] =	(InstEncoding){lsr,						"lsr",		0x00000000,	3,	false,	SET_FLAGS};
@@ -484,7 +623,7 @@ InstEncoding *createEncodings() {
 	encodings[33] =	(InstEncoding){rdRnOprnd2,				"sbc",		0x00C00000,	3,	false,	SET_FLAGS};
 	encodings[34] =	(InstEncoding){rxRxRxRx,				"smlal",	0x00E00090,	5,	true,	SET_FLAGS};
 	encodings[35] =	(InstEncoding){rxRxRxRx,				"smull",	0x00C00090,	5,	true,	SET_FLAGS};
-	encodings[36] =	(InstEncoding){unsupportedInstruction,	"stm",		0x00000000,	3,	false,	ADDRESSING_MODE};
+	encodings[36] =	(InstEncoding){ldmStm,					"stm",		0x08000000,	3,	false,	ADDRESSING_MODE};
 	encodings[37] =	(InstEncoding){ldrStr,					"str",		0x04000000,	3,	false,	DATA_SIZE};
 	encodings[38] =	(InstEncoding){rdRnOprnd2,				"sub",		0x00400000,	3,	false,	SET_FLAGS};
 	encodings[39] =	(InstEncoding){swi,						"swi",		0x0F000000,	3,	false,	COND_ONLY};
