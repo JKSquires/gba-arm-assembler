@@ -599,7 +599,7 @@ uint32_t msr(uint32_t, char *oprnd1_start, bool, struct Label *, unsigned long, 
 
 	if (i->blocks[1].type == REG) {
 		printf("MSR REG\n");
-		uint8_t n_reg_data = readReg(i->blocks[1].start, 1, i);
+		uint8_t n_reg_data = readReg(i->blocks[1].start, 2, i);
 		if (n_reg_data & REG_READ_ERR)
 			return 0;
 		encoding |= n_reg_data & 0xF;
@@ -610,6 +610,28 @@ uint32_t msr(uint32_t, char *oprnd1_start, bool, struct Label *, unsigned long, 
 
 		encoding |= (1 << 25) | (imm & 0xFFF);
 	}
+
+	return encoding;
+}
+
+uint32_t neg(uint32_t, char *oprnd1_start, bool, struct Label *, unsigned long, Inst *i) {
+	uint32_t encoding = 0;
+
+	if (i->block_count != 2) {
+		printf("Negate register requires 2 operands: ");
+		lineIssue(i->line);
+		return 0;
+	}
+
+	uint8_t d_reg_data = readReg(oprnd1_start, 1, i);
+	if (d_reg_data & REG_READ_ERR)
+		return 0;
+	encoding |= (d_reg_data & 0xF) << 12;
+
+	uint8_t m_reg_data = readReg(i->blocks[1].start, 2, i);
+	if (m_reg_data & REG_READ_ERR)
+		return 0;
+	encoding |= (m_reg_data & 0xF) << 16;
 
 	return encoding;
 }
@@ -738,7 +760,7 @@ InstEncoding *createEncodings() {
 	encodings[21] =	(InstEncoding){msr,						"msr",		0x0120F000,	3,	false,	COND_ONLY};
 	encodings[22] =	(InstEncoding){rdRnRm,					"mul",		0x00000090,	3,	false,	SET_FLAGS};
 	encodings[23] =	(InstEncoding){rxOprnd2,				"mvn",		0x01E00000,	3,	false,	SET_FLAGS};
-	encodings[24] =	(InstEncoding){unsupportedInstruction,	"neg",		0x00000000,	3,	false,	COND_ONLY};
+	encodings[24] =	(InstEncoding){neg,						"neg",		0x02700000,	3,	false,	COND_ONLY};
 	encodings[25] =	(InstEncoding){nop,						"nop",		0x00000000,	3,	false,	NOP};
 	encodings[26] =	(InstEncoding){rdRnOprnd2,				"orr",		0x01800000,	3,	false,	SET_FLAGS};
 	encodings[27] =	(InstEncoding){popPush,					"pop",		0x08BD0000,	3,	false,	COND_ONLY};
