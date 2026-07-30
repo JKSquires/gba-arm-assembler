@@ -5,6 +5,7 @@
 #define REG_READ_COUNT_MASK (0x7 << REG_READ_COUNT_OFFSET)
 #define PSR_FIELD_OFFSET 1
 #define PSR_FIELD_MASK (0xF << PSR_FIELD_OFFSET)
+#define IMM12_ROT_ISSUE (1 << 15)
 
 
 uint8_t readReg(char *reg, uint8_t oprnd_num, Inst *i) {
@@ -136,6 +137,20 @@ uint32_t readConst(char *constant, Inst *i) {
 	return neg ? 0 - data : data;
 }
 
+uint32_t getLabelOffset(char *label_start, struct Label *labels, unsigned long label_tot, Inst *i) {
+	unsigned int inst_label_length = 0;
+	for (; label_start[inst_label_length] >= 'a' && label_start[inst_label_length] <= 'z' || label_start[inst_label_length] >= '0' && label_start[inst_label_length] <= '9'; inst_label_length++);
+
+	unsigned long label_i = findLabel(label_start, inst_label_length, labels, label_tot);
+	if (label_i == label_tot) {
+		printf("Cannot find label from instruction: ");
+		lineIssue(i->line);
+		return 0;
+	}
+
+	return labels[label_i].offset;
+}
+
 uint16_t imm12(uint32_t val, Inst *i) {
 	for (int r = 0; r < 32; r += 2) {
 		uint32_t imm8 = (val << r) | (uint32_t)((uint64_t)val >> (32 - r));
@@ -147,7 +162,7 @@ uint16_t imm12(uint32_t val, Inst *i) {
 
 	printf("Cannot create rotation for 12-bit immediate: ");
 	lineIssue(i->line);
-	return 0;
+	return IMM12_ROT_ISSUE;
 }
 
 uint32_t unsupportedInstruction(uint32_t, char *, bool, struct Label *, unsigned long, Inst *i) {
@@ -353,6 +368,41 @@ uint32_t shiftPseudoInst(char *oprnd1_start, enum BlockType type, Inst *i) {
 }
 
 
+uint32_t adr(uint32_t inst_offset, char *oprnd1_start, bool, struct Label *labels, unsigned long label_tot, Inst *i) {
+	uint32_t encoding = 0;
+
+	if (i->block_count != 2) {
+		printf("Load address requires 2 operands: ");
+		lineIssue(i->line);
+		return 0;
+	}
+
+	uint8_t d_reg_data = readReg(oprnd1_start, 1, i);
+	if (d_reg_data & REG_READ_ERR)
+		return 0;
+	encoding |= (d_reg_data & 0xF) << 12;
+
+	if (i->blocks[1].type != LBL) {
+		printf("Load address operand 2 must be a label: ");
+		lineIssue(i->line);
+		return 0;
+	}
+
+	uint32_t label_offset = getLabelOffset(i->blocks[1].start, labels, label_tot, i);
+	uint32_t val = label_offset - (inst_offset + 8);
+	bool sub = val & (1 << 31);
+	val = (!sub * val) - (sub * val);
+
+	uint16_t offset_imm = imm12(val, i);
+	if (offset_imm & IMM12_ROT_ISSUE) {
+		printf("Destination label address cannot be calculated for load address (small-range) instruction: ");
+		lineIssue(i->line);
+		return 0;
+	}
+
+	return encoding | ((1 << 22) * sub) | ((1 << 23) * !sub) | (offset_imm & 0xFFF);
+}
+
 uint32_t asr(uint32_t, char *oprnd1_start, bool, struct Label *, unsigned long, Inst *i) {
 	return shiftPseudoInst(oprnd1_start, ASR, i);
 }
@@ -360,18 +410,7 @@ uint32_t asr(uint32_t, char *oprnd1_start, bool, struct Label *, unsigned long, 
 uint32_t b(uint32_t inst_offset, char *oprnd1_start, bool, struct Label *labels, unsigned long label_tot, Inst *i) {
 	uint32_t encoding = 0;
 
-	unsigned int inst_label_length = 0;
-	for (; oprnd1_start[inst_label_length] >= 'a' && oprnd1_start[inst_label_length] <= 'z' || oprnd1_start[inst_label_length] >= '0' && oprnd1_start[inst_label_length] <= '9'; inst_label_length++);
-
-	unsigned long label_i = findLabel(oprnd1_start, inst_label_length, labels, label_tot);
-	if (label_i == label_tot) { // TODO: maybe someday we can support branching to a direct address (e.g. b $8000000)
-		printf("Cannot find label for branch: ");
-		lineIssue(i->line);
-
-		return 0;
-	}
-
-	uint32_t label_offset = labels[label_i].offset;
+	uint32_t label_offset = getLabelOffset(oprnd1_start, labels, label_tot, i); // TODO: maybe someday we can support branching to a direct address (e.g. b $8000000)
 
 	uint32_t imm24 = (label_offset - (inst_offset + 8)) >> 2;
 
@@ -513,21 +552,10 @@ uint32_t ldrStr(uint32_t inst_offset, char *oprnd1_start, bool h_sh_sb, struct L
 			encoding |= 1 << 22;
 		}
 	} else if (i->blocks[1].type == LBL && *(i->blocks[0].start) == 'l') {
-		unsigned int inst_label_length = 0;
-		for (; i->blocks[1].start[inst_label_length] >= 'a' && i->blocks[1].start[inst_label_length] <= 'z' || i->blocks[1].start[inst_label_length] >= '0' && i->blocks[1].start[inst_label_length] <= '9'; inst_label_length++);
-
-		unsigned long label_i = findLabel(i->blocks[1].start, inst_label_length, labels, label_tot);
-		if (label_i == label_tot) {
-			printf("Cannot find label: ");
-			lineIssue(i->line);
-
-			return 0;
-		}
-
-		uint32_t label_offset = labels[label_i].offset;
+		uint32_t label_offset = getLabelOffset(i->blocks[1].start, labels, label_tot, i);
 		uint32_t val = label_offset - (inst_offset + 8);
 		u = val <= 0xFFF;
-		val = 0 - (!u * val);
+		val = (u * val) - (!u * val);
 
 		if (val > (0xFF | (0xF00 * !h_sh_sb))) {
 			printf("Destination label is too far from load/store instruction to use literal: ");
@@ -739,7 +767,7 @@ InstEncoding *createEncodings() {
 	encodings[0] =	(InstEncoding){rdRnOprnd2,				"adc",		0x00A00000,	3,	false,	SET_FLAGS};
 	encodings[1] =	(InstEncoding){rdRnOprnd2,				"add",		0x00800000,	3,	false,	SET_FLAGS};
 	encodings[2] =	(InstEncoding){unsupportedInstruction,	"addr",		0x00000000,	4,	false,	COND_ONLY};
-	encodings[3] =	(InstEncoding){unsupportedInstruction,	"adr",		0x00000000,	3,	false,	COND_ONLY};
+	encodings[3] =	(InstEncoding){adr,						"adr",		0x020F0000,	3,	false,	COND_ONLY};
 	encodings[4] =	(InstEncoding){unsupportedInstruction,	"adrl",		0x00000000,	4,	false,	COND_ONLY};
 	encodings[5] =	(InstEncoding){rdRnOprnd2,				"and",		0x00000000,	3,	false,	SET_FLAGS};
 	encodings[6] =	(InstEncoding){asr,						"asr",		0x00000000,	3,	false,	SET_FLAGS};

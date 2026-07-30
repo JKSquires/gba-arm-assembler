@@ -104,6 +104,7 @@ Unsigned Multiply Long | `umull{<cond>}{s} <RdLo>, <RdHi>, <Rn>, <Rm>` | `umull 
 
 Name | Instruction | Example Usage
 ---- | ----------- | -------------
+Load Address (Small-Range) | `adr{<cond>} <Rd>, <label>` | `adr r4, sprite`
 Arithmetic Shift Right | `asr{<cond>}{s} <Rd>, <Rm>, <oprnd2>` | `asr r0, r0, #4`<br>`asrne r2,r4,r3`
 Logical Shift Left | `lsl{<cond>}{s} <Rd>, <Rm>, <oprnd2>` | `lsl r0, r0, #4`<br>`lslne r2,r4,r3`
 Logical Shift Right | `lsr{<cond>}{s} <Rd>, <Rm>, <oprnd2>` | `lsr r0, r0, #4`<br>`lsrne r2,r4,r3`
