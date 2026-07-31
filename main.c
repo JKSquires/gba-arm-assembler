@@ -5,8 +5,8 @@
 
 
 #define MAX_INSTRUCTION_BLOCKS 17
-#define BLOCK_TYPE_MASK 7 // TODO: reconsider if needed
-#define BLOCK_TYPE_GROUP_MASK (~BLOCK_TYPE_MASK) // "
+#define BLOCK_TYPE_MASK 7
+#define BLOCK_TYPE_GROUP_MASK (~BLOCK_TYPE_MASK)
 #define SHIFT_SHIFT 5
 #define BLOCK_TYPE_SHIFT_MASK (7 << SHIFT_SHIFT)
 
@@ -53,7 +53,7 @@ enum InstructionSuffix {
 	NOP,
 };
 
-enum BlockType { // TODO: Use the block type building format used here to format and put together the BlockTypes later instead of hard-coding everything; in later code
+enum BlockType {
 	UNKNOWN_BLOCK = 0,
 	FIRST = 1,
 	REG = 2,
@@ -92,8 +92,8 @@ enum NumType {
 
 
 struct Line {
-	char *start; // TODO: might be nice to get rid of this
-	void *data; // TODO: I don't think it needs to be a void * anymore because we never ended up using it for any other type of data
+	char *start;
+	Inst *data; // TODO: maybe instead of a pointer to an instruction, we can just store the instruction here so that we don't have to allocate space for an instruction and also have a pointer to it. If we do this, when we call the encoding functions, we should put in &data at first instead of data so that we don't have to pass an entire struct as a parameter.
 	unsigned long line_num;
 	enum LineType type : 8;
 };
@@ -123,6 +123,9 @@ struct Instruction {
 	struct InstructionBlock *blocks;
 	uint8_t block_count;
 };
+
+
+int end_r = 0;
 
 
 char getLowerChar(char c) {
@@ -187,6 +190,8 @@ void lineIssue(struct Line *line) {
 		printf("%c", *c);
 	}
 	printf("\n\n");
+
+	end_r = 100;
 }
 
 #include "encoding.c"
@@ -194,44 +199,92 @@ void lineIssue(struct Line *line) {
 
 // TODO: go through and make sure not too much gets stored on the stack
 int main(int argc, char **argv) {
+	bool disp_rom_info = false;
+	bool verbose_mode = false;
+
 	FILE *asm_file; // TODO: maybe for when we implement including other asm files in a file we should have an array of those files.
 	FILE *gba_file;
 
-	if (argc < 2) {
-		printf("Please specify input file.\nUsage: %s <input asm file> [output gba file]\n", argv[0]);
+	char *asm_buffer = NULL;
+	struct Line *lines = NULL;
+	struct Label *labels = NULL;
+	unsigned long label_tot = 0;
+	InstEncoding *encodings = NULL;
+	unsigned char *rom = NULL;
 
-		return -1;
+	char *usage = "[-i] [-v] <input asm file> [output gba file]";
+	int input_file_arg_i = 1;
+
+	for (; argc > input_file_arg_i && argv[input_file_arg_i][0] == '-'; input_file_arg_i++) {
+		for (int i = 1; argv[input_file_arg_i][i] != '\0'; i++) {
+			switch (argv[input_file_arg_i][i]) {
+				case 'i': // display ROM info
+					disp_rom_info = true;
+					break;
+				case 'v': // verbose mode
+					verbose_mode = true;
+					break;
+				default:
+					printf("Usage: %s %s\n", argv[0], usage);
+					break;
+			}
+		}
 	}
 
-	asm_file = fopen(argv[1], "r");
+	if (argc < input_file_arg_i + 1) {
+		printf("Please specify input file.\nUsage: %s %s\n", argv[0], usage);
+
+		end_r = -100;
+		goto freeEnd;
+	}
+
+	asm_file = fopen(argv[input_file_arg_i], "r");
 
 	if (asm_file == NULL) {
 		fprintf(stderr, "ERROR: Error opening %s\n", argv[1]);
 
-		return -101;
+		end_r = -101;
+		goto freeEnd;
 	}
 
 
 	fseek(asm_file, 0, SEEK_END);
-	long asm_size = ftell(asm_file);
+	unsigned long asm_size = ftell(asm_file);
 	rewind(asm_file);
 
-	char *asm_buffer = malloc(asm_size + 1);
-	fread(asm_buffer, 1, asm_size, asm_file); // TODO: once executed, check to make sure it worked
+	asm_buffer = malloc(asm_size + 1);
+	unsigned long read = fread(asm_buffer, 1, asm_size, asm_file);
+	if (read < asm_size) {
+		fprintf(stderr, "ERROR: Error reading file from buffer\n");
+
+		end_r = -104;
+		goto freeEnd;
+	}
 	asm_buffer[asm_size] = '\n';
 
 	fclose(asm_file);
 
 	unsigned long lines_arr_size = 256;
-	struct Line *lines = malloc(lines_arr_size * sizeof *lines);
+	lines = malloc(lines_arr_size * sizeof *lines);
+	if (lines == NULL) {
+		fprintf(stderr, "ERROR: Issue allocating space for lines array\n");
+
+		end_r = -200;
+		goto freeEnd;
+	}
 
 	unsigned long line_num = 0;
 	unsigned long file_line_num = 1;
 
 	uint32_t track_rom_size = 0;
 	unsigned long labels_arr_size = 64;
-	struct Label *labels = malloc(labels_arr_size * sizeof *labels); // FIXME: should absolutely use a hash table at some point instead
-	unsigned long label_tot = 0;
+	labels = malloc(labels_arr_size * sizeof *labels); // FIXME: should absolutely use a hash table at some point instead
+	if (labels == NULL) {
+		fprintf(stderr, "ERROR: Issue allocating space for labels array\n");
+
+		end_r = -201;
+		goto freeEnd;
+	}
 
 	bool comment = false;
 	enum OperandState track_operand_state = REGULAR;
@@ -259,14 +312,26 @@ int main(int argc, char **argv) {
 
 			if (lines[line_num].type == CODE) {
 				Inst *inst = malloc(sizeof *inst);
+				if (inst == NULL) {
+					fprintf(stderr, "ERROR: Issue allocating space for instruction\n");
+
+					end_r = -202;
+					goto freeEnd;
+				}
 				inst->line = &(lines[line_num]);
 				inst->blocks = malloc(count_blocks * sizeof (struct InstructionBlock));
+				if (inst->blocks == NULL) {
+					fprintf(stderr, "ERROR: Issue allocating space for instruction blocks array\n");
+
+					end_r = -203;
+					goto freeEnd;
+				}
 				for (int i = 0; i < count_blocks; i++) {
 					inst->blocks[i] = blocks[i];
 				}
 				inst->block_count = count_blocks;
 
-				lines[line_num].data = (void *)inst;
+				lines[line_num].data = inst;
 
 				track_rom_size += 4;
 				//printf("\nROM size: %lu bytes\n", (unsigned long)track_rom_size);
@@ -277,7 +342,14 @@ int main(int argc, char **argv) {
 			if (c != asm_buffer_end) {
 				if (++line_num + 1 == lines_arr_size) {
 					lines_arr_size *= 2;
-					lines = realloc(lines, lines_arr_size * sizeof *lines);
+					struct Line *realloc_lines = realloc(lines, lines_arr_size * sizeof *lines);
+					if (realloc_lines == NULL) {
+						fprintf(stderr, "ERROR: Issue reallocating for more space for lines array\n");
+
+						end_r = -204;
+						goto freeEnd;
+					}
+					lines = realloc_lines;
 
 					for (unsigned long i = 0; i < line_num; i++) {
 						if (lines[i].data != NULL) {
@@ -364,7 +436,14 @@ int main(int argc, char **argv) {
 					if (label_i == label_tot) {
 						if (label_tot == labels_arr_size) {
 							labels_arr_size *= 2;
-							labels = realloc(labels, labels_arr_size * sizeof *labels);
+							struct Label *realloc_labels = realloc(labels, labels_arr_size * sizeof *labels);
+							if (realloc_labels == NULL) {
+								fprintf(stderr, "ERROR: Issue reallocating for more space for labels array\n");
+
+								end_r = -205;
+								goto freeEnd;
+							}
+							labels = realloc_labels;
 						}
 
 						labels[label_tot] = (struct Label){lines[line_num].start, track_rom_size, label_length};
@@ -425,7 +504,7 @@ int main(int argc, char **argv) {
 
 					break;
 				default:
-					*c = getLowerChar(*c); // TODO: the goal here is to have every character lowercase so that we don't have to do getLowerChar on characters again in the future, so we need to check to make sure this is setting all to lowercase (except things like labels and label calls unless we want to make it so that something like "ABC" == "abc"), and then we should remove all getLowerChar in later code
+					*c = getLowerChar(*c);
 
 					enum BlockType block_type = blocks[count_blocks - 1].type;
 					if (block_type == UNKNOWN_BLOCK) {
@@ -451,7 +530,7 @@ int main(int argc, char **argv) {
 							blocks[count_blocks - 1].type = LBL;
 
 							char c3[] = {0, 0, 0};
-							c3[0] = getLowerChar(*c);
+							c3[0] = *c;
 							if (c3[0] != '\n') c3[1] = getLowerChar(*(c + 1));
 							if (c3[1] != '\n') c3[2] = getLowerChar(*(c + 2));
 
@@ -495,30 +574,44 @@ int main(int argc, char **argv) {
 	}
 
 
-	InstEncoding *encodings = createEncodings();
-	unsigned char *rom = calloc(track_rom_size, 1);
+	encodings = createEncodings();
+	if (encodings == NULL) {
+		fprintf(stderr, "ERROR: Issue allocating space for instruction encodings array\n");
+
+		end_r = -206;
+		goto freeEnd;
+	}
+	rom = calloc(track_rom_size, 1);
+	if (rom == NULL) {
+		fprintf(stderr, "ERROR: Issue allocating space for ROM bytes\n");
+
+		end_r = -207;
+		goto freeEnd;
+	}
 	uint32_t rom_offset = 0;
 
-	printf("\nLine:\tType:\n");
+	if (verbose_mode) printf("\nLine:\tType:\n");
 
 	for (int i = 0; i <= line_num; i++) {
-		printf("%lu:\t%d:\t", lines[i].line_num, lines[i].type);
+		if (verbose_mode) printf("%lu:\t%d:\t", lines[i].line_num, lines[i].type);
 
 		switch (lines[i].type) {
 			case CODE:
 				Inst *inst = (Inst *)(lines[i].data);
 
-				printf("\t\t");
-				for (int bi = 0; bi < inst->block_count; bi++) {
-					if (bi != 0) {
-						printf("\t,\t");
+				if (verbose_mode) {
+					printf("\t\t");
+					for (int bi = 0; bi < inst->block_count; bi++) {
+						if (bi != 0) {
+							printf("\t,\t");
+						}
+						printf("(%d)", inst->blocks[bi].type);
+						for (char *c = inst->blocks[bi].start; *c != ',' && *c != '\n' && *c != ';'; c++) {
+							printf("%c", *c);
+						}
 					}
-					printf("(%d)", inst->blocks[bi].type);
-					for (char *c = inst->blocks[bi].start; *c != ',' && *c != '\n' && *c != ';'; c++) {
-						printf("%c", *c);
-					}
+					printf("\n");
 				}
-				printf("\n");
 
 				uint32_t encoding = 0x00000000;
 
@@ -528,7 +621,7 @@ int main(int argc, char **argv) {
 					int last_encode_success = -1;
 					int mi = 0;
 					for (; encode_i < ENCODINGS_COUNT && mnemonic_start[mi] >= 'a' && mnemonic_start[mi] <= 'z'; mi++) {
-						while (encode_i < ENCODINGS_COUNT && encodings[encode_i].mnemonic[mi] != getLowerChar(mnemonic_start[mi])) {
+						while (encode_i < ENCODINGS_COUNT && encodings[encode_i].mnemonic[mi] != mnemonic_start[mi]) {
 							encode_i++;
 
 							while (encode_i < ENCODINGS_COUNT && mi >= encodings[encode_i].mnemonic_length)
@@ -539,7 +632,7 @@ int main(int argc, char **argv) {
 
 							bool correct_prev = true;
 							for (int check_c = 0; check_c <= mi && check_c < encodings[encode_i].mnemonic_length; check_c++) {
-								if (encodings[encode_i].mnemonic[check_c] != getLowerChar(mnemonic_start[check_c]))
+								if (encodings[encode_i].mnemonic[check_c] != mnemonic_start[check_c])
 									correct_prev = false;
 							}
 
@@ -553,7 +646,7 @@ int main(int argc, char **argv) {
 					if (encode_i == ENCODINGS_COUNT || mi != encodings[encode_i].mnemonic_length) {
 						if (last_encode_success != -1 && mi > encodings[last_encode_success].mnemonic_length) {
 							for (int check_c = 0; check_c < encodings[last_encode_success].mnemonic_length; check_c++) {
-								if (encodings[last_encode_success].mnemonic[check_c] != getLowerChar(mnemonic_start[check_c]))
+								if (encodings[last_encode_success].mnemonic[check_c] != mnemonic_start[check_c])
 									starts_with_last_success = false;
 							}
 						} else {
@@ -646,7 +739,7 @@ int main(int argc, char **argv) {
 									//printf("\n");
 
 									break;
-								case ADDRESSING_MODE: // FIXME: when encoding ldm and sdm in previous section, note that ldm has bit 20 set and stm has bit 20 cleared. this means that we should probably not mask that bit in this section--review
+								case ADDRESSING_MODE:
 									//printf("Instruction detected with possible addressing mode\n");
 
 									encoding = (encoding & 0xF03FFFFF) | (1 << 27);
@@ -716,7 +809,6 @@ int main(int argc, char **argv) {
 									break;
 							}
 						}
-						// TODO: we might want to say somewhere that this assembler will only accept divided syntax for ARM assembly rather than unified syntax / UAL, but then we would have to change it to make sure that all immediate values are required to start with '#'
 					} else {
 						//if (starts_with_last_success) {
 						//	printf("Probable nop\n");
@@ -736,10 +828,10 @@ int main(int argc, char **argv) {
 			case DIR_B:
 			case DIR_H:
 			case DIR_W:
-				printf("\t\t");
+				if (verbose_mode) printf("\t\t");
 
 				for (char *c = lines[i].start; *c != '\n' && *c != ';'; c++) {
-					printf("%c", *c);
+					if (verbose_mode) printf("%c", *c);
 
 					if (*c == '$' || *c == '#' || *c == '%') {
 						enum NumType num_type = *c == '$' ? HEX :
@@ -747,15 +839,15 @@ int main(int argc, char **argv) {
 															BIN;
 
 						uint32_t val = 0;
-						for (c++; (*c >= '0' && *c <= '9') || (getLowerChar(*c) >= 'a' && getLowerChar(*c) <= 'f'); c++) {
-							printf("%c", *c);
+						for (c++; (*c >= '0' && *c <= '9') || (*c >= 'a' && *c <= 'f'); c++) {
+							if (verbose_mode) printf("%c", *c);
 							switch (num_type) {
 								case HEX:
 									val <<= 4;
 									if (*c >= '0' && *c <= '9') {
 										val += *c - '0';
 									} else {
-										val += 10 + (getLowerChar(*c) - 'a');
+										val += 10 + (*c - 'a');
 									}
 									break;
 								case DEC:
@@ -798,37 +890,53 @@ int main(int argc, char **argv) {
 						}
 					}
 				}
-				printf("\n");
+				if (verbose_mode) printf("\n");
 
 				break;
 			default:
-				printf("\n");
+				if (verbose_mode) printf("\n");
 				break;
 		}
 	}
 
 
-	printf("\n\nLabel:\t\tOffset:\n");
+	// FIXME: make a properly aligned table for this information (maybe make it a flag for the program to show?)
+	unsigned int longest_label_length = 5;
 	for (int i = 0; i < label_tot; i++) {
-		for (char *c = labels[i].start; *c != ':'; c++) {
-			printf("%c", *c);
-		}
-
-		printf("\t\t%lu\n", (unsigned long)(labels[i].offset));
+		if (labels[i].length > longest_label_length)
+			longest_label_length = labels[i].length;
 	}
 
-	printf("\n\nROM size: %lu bytes\n", (unsigned long)track_rom_size);
+	if (disp_rom_info) {
+		printf("\n\nLabel");
+		for (int t = 5; t <= longest_label_length; t++) printf(" ");
+		printf("| Offset (from $8000000)\n");
+		for (int t = 0; t <= longest_label_length; t++) printf("-");
+		printf("+-------------------------\n");
+		for (int i = 0; i < label_tot; i++) {
+			int t = 0;
+			for (; t < labels[i].length; t++) {
+				printf("%c", labels[i].start[t]);
+			}
+			for (; t <= longest_label_length; t++) printf(" ");
+
+			printf("| $%lX\n", (unsigned long)(labels[i].offset));
+		}
+
+		printf("\n\nROM size: %lu bytes\n", (unsigned long)track_rom_size);
+	}
 
 
-	if (argc > 2) {
-		gba_file = fopen(argv[2], "wb");
+	if (argc > input_file_arg_i + 1) {
+		gba_file = fopen(argv[input_file_arg_i + 1], "wb");
 
 		if (gba_file == NULL) {
 			fprintf(stderr, "ERROR: Error creating or opening %s\n", argv[2]);
 
 			fclose(asm_file);
 
-			return -102;
+			end_r = -102;
+			goto freeEnd;
 		}
 	} else {
 		gba_file = fopen("a.gba", "wb");
@@ -838,7 +946,8 @@ int main(int argc, char **argv) {
 
 			fclose(asm_file);
 
-			return -103;
+			end_r = -103;
+			goto freeEnd;
 		}
 	}
 
@@ -846,20 +955,23 @@ int main(int argc, char **argv) {
 
 	fclose(gba_file);
 
+	freeEnd:
 	free(rom);
 	free(encodings);
-	for (int i = 0; i <= line_num; i++) {
-		void *line_data = lines[i].data;
-		if (line_data != NULL) {
-			if (lines[i].type == CODE) {
-				free(((struct Instruction *)line_data)->blocks);
+	if (labels != NULL) {
+		for (int i = 0; i <= line_num; i++) {
+			Inst *line_data = lines[i].data;
+			if (line_data != NULL) {
+				if (lines[i].type == CODE) {
+					free(line_data->blocks);
+				}
+				free(line_data);
 			}
-			free(line_data);
 		}
 	}
 	free(labels);
 	free(lines);
 	free(asm_buffer);
 
-	return 0;
+	return end_r;
 }

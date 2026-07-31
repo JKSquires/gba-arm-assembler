@@ -101,14 +101,14 @@ uint32_t readConst(char *constant, Inst *i) {
 			constant++;
 		}
 		char *c = constant;
-		for (; (*c >= '0' && *c <= '9') || (getLowerChar(*c) >= 'a' && getLowerChar(*c) <= 'f'); c++) {
+		for (; (*c >= '0' && *c <= '9') || (*c >= 'a' && *c <= 'f'); c++) {
 			switch (num_type) {
 				case HEX:
 					data <<= 4;
 					if (*c >= '0' && *c <= '9') {
 						data += *c - '0';
 					} else {
-						data += 10 + (getLowerChar(*c) - 'a');
+						data += 10 + (*c - 'a');
 					}
 					break;
 				case DEC:
@@ -414,7 +414,7 @@ uint32_t b(uint32_t inst_offset, char *oprnd1_start, bool, struct Label *labels,
 
 	uint32_t imm24 = (label_offset - (inst_offset + 8)) >> 2;
 
-	if (imm24 > 0x00FFFFFF && imm24 < 0x3F000000) { // TODO: make sure these bounds are correct
+	if (imm24 & (0x3 << 30)) {
 		printf("Issue creating 24-bit immediate offset: ");
 		lineIssue(i->line);
 	}
@@ -428,10 +428,8 @@ uint32_t bx(uint32_t, char *oprnd1_start, bool, struct Label *, unsigned long, I
 	uint32_t encoding = 0;
 
 	uint8_t reg_data = readReg(oprnd1_start, 1, i);
-
 	if (reg_data & REG_READ_ERR)
 		return 0;
-
 	encoding |= reg_data & 0xF;
 
 	return encoding;
@@ -490,7 +488,7 @@ uint32_t ldrStr(uint32_t inst_offset, char *oprnd1_start, bool h_sh_sb, struct L
 				uint8_t m_reg_data = readReg(c2, 3, i);
 				if (m_reg_data & REG_READ_ERR)
 					return 0;
-				encoding |= (1 << 25) | m_reg_data;
+				encoding |= (1 << 25) | (m_reg_data & 0xF);
 
 				if (i->blocks[2].type & MEM) {
 					p = 1;
@@ -626,13 +624,11 @@ uint32_t msr(uint32_t, char *oprnd1_start, bool, struct Label *, unsigned long, 
 	}
 
 	if (i->blocks[1].type == REG) {
-		printf("MSR REG\n");
 		uint8_t n_reg_data = readReg(i->blocks[1].start, 2, i);
 		if (n_reg_data & REG_READ_ERR)
 			return 0;
 		encoding |= n_reg_data & 0xF;
 	} else {
-		printf("MSR IMM\n");
 		uint32_t constant = readConst(i->blocks[1].start, i);
 		uint16_t imm = imm12(constant, i);
 
@@ -763,6 +759,9 @@ uint32_t und(uint32_t, char *oprnd1_start, bool, struct Label *, unsigned long, 
 
 InstEncoding *createEncodings() {
 	InstEncoding *encodings = malloc(ENCODINGS_COUNT * sizeof *encodings);
+	if (encodings == NULL) {
+		return encodings;
+	}
 
 	encodings[0] =	(InstEncoding){rdRnOprnd2,				"adc",		0x00A00000,	3,	false,	SET_FLAGS};
 	encodings[1] =	(InstEncoding){rdRnOprnd2,				"add",		0x00800000,	3,	false,	SET_FLAGS};
@@ -817,9 +816,9 @@ InstEncoding *createEncodings() {
 
 enum InstructionCondition getInstCond(char *cond_start) {
 	char cond[2];
-	cond[0] = getLowerChar(cond_start[0]);
+	cond[0] = cond_start[0];
 	if (cond[0] < 'a' || cond[0] > 'z') return AL;
-	cond[1] = getLowerChar(cond_start[1]);
+	cond[1] = cond_start[1];
 	if (cond[1] < 'a' || cond[1] > 'z') return AL;
 
 

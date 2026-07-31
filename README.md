@@ -7,7 +7,7 @@ A simple purpose-built ARM assembler targeting the Game Boy Advance.
 ## Usage
 
 ```sh
-gbaaa <input ASM file> [output GBA file]
+gbaaa [-i] [-v] <input ASM file> [output GBA file]
 ```
 
 ---
