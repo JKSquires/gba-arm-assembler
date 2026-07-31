@@ -94,6 +94,7 @@ enum NumType {
 struct Line {
 	char *start;
 	Inst *data; // TODO: maybe instead of a pointer to an instruction, we can just store the instruction here so that we don't have to allocate space for an instruction and also have a pointer to it. If we do this, when we call the encoding functions, we should put in &data at first instead of data so that we don't have to pass an entire struct as a parameter.
+	unsigned long file_name_i;
 	unsigned long line_num;
 	enum LineType type : 8;
 };
@@ -124,7 +125,16 @@ struct Instruction {
 	uint8_t block_count;
 };
 
+struct AsmFile {
+	unsigned long file_name_i;
+	unsigned long file_line_num;
+	char *asm_buffer;
+	char *asm_buffer_continue;
+	char *asm_buffer_end;
+};
 
+
+char **file_names;
 int end_r = 0;
 
 
@@ -185,7 +195,11 @@ unsigned long findLabel(char *inst_label, unsigned int inst_label_length, struct
 }
 
 void lineIssue(struct Line *line) {
-	printf("Issue on line %lu:\n", line->line_num);
+	printf("Issue on line %lu in file \"", line->line_num);
+	for (char *c = file_names[line->file_name_i]; *c != '\0' && *c != '"' && *c != '\n'; c++) {
+		printf("%c", *c);
+	}
+	printf("\":\n");
 	for (char *c = line->start; *c != '\n'; c++) {
 		printf("%c", *c);
 	}
@@ -206,6 +220,7 @@ int main(int argc, char **argv) {
 	FILE *gba_file;
 
 	char *asm_buffer = NULL;
+	struct AsmFile *asm_stack = NULL;
 	struct Line *lines = NULL;
 	struct Label *labels = NULL;
 	unsigned long label_tot = 0;
@@ -239,6 +254,16 @@ int main(int argc, char **argv) {
 	}
 
 	asm_file = fopen(argv[input_file_arg_i], "r");
+	unsigned long file_names_size = 8;
+	unsigned long file_name_count = 1;
+	file_names = malloc(file_names_size * sizeof *file_names); // TODO: might want to use a hash table instead
+	if (file_names == NULL) {
+		fprintf(stderr, "ERROR: Issue allocating space for file names array\n");
+
+		end_r = -208;
+		goto freeEnd;
+	}
+	file_names[0] = argv[input_file_arg_i];
 
 	if (asm_file == NULL) {
 		fprintf(stderr, "ERROR: Error opening %s\n", argv[1]);
@@ -297,10 +322,21 @@ int main(int argc, char **argv) {
 		asm_buffer_start = skipWhitespace(asm_buffer_start + 1);
 	}
 
-	lines[0] = (struct Line){asm_buffer_start, NULL, file_line_num, CODE};
+	unsigned int asm_stack_size = 4;
+	unsigned int asm_i = 0;
+	asm_stack = malloc(asm_stack_size * sizeof *asm_stack);
+	if (asm_stack == NULL) {
+		fprintf(stderr, "ERROR: Issue allocating space for ASM file stack\n");
+
+		end_r = -209;
+		goto freeEnd;
+	}
+	asm_stack[0] = (struct AsmFile){0, file_line_num, asm_buffer, asm_buffer_start, asm_buffer_end};
+
+	lines[0] = (struct Line){asm_buffer_start, NULL, asm_stack[asm_i].file_name_i, asm_stack[asm_i].file_line_num, CODE};
 	blocks[0] = (struct InstructionBlock){asm_buffer_start, FIRST};
 
-	for (char *c = asm_buffer_start; c <= asm_buffer_end; c++) {
+	for (char *c = asm_stack[asm_i].asm_buffer_continue; c <= asm_stack[asm_i].asm_buffer_end; c++) {
 		if (*c == '\n') {
 			comment = false;
 			if (track_operand_state != REGULAR) {
@@ -308,7 +344,7 @@ int main(int argc, char **argv) {
 				lineIssue(&lines[line_num]);
 				track_operand_state = REGULAR;
 			}
-			file_line_num++;
+			asm_stack[asm_i].file_line_num++;
 
 			if (lines[line_num].type == CODE) {
 				Inst *inst = malloc(sizeof *inst);
@@ -337,9 +373,9 @@ int main(int argc, char **argv) {
 				//printf("\nROM size: %lu bytes\n", (unsigned long)track_rom_size);
 			}
 
-			c = skipEmptyLines(c, asm_buffer_end, &file_line_num);
+			c = skipEmptyLines(c, asm_stack[asm_i].asm_buffer_end, &(asm_stack[asm_i].file_line_num));
 
-			if (c != asm_buffer_end) {
+			if (c != asm_stack[asm_i].asm_buffer_end) {
 				if (++line_num + 1 == lines_arr_size) {
 					lines_arr_size *= 2;
 					struct Line *realloc_lines = realloc(lines, lines_arr_size * sizeof *lines);
@@ -359,7 +395,7 @@ int main(int argc, char **argv) {
 				}
 
 				c = skipWhitespace(c + 1) - 1;
-				lines[line_num] = (struct Line){c + 1, NULL, file_line_num, CODE};
+				lines[line_num] = (struct Line){c + 1, NULL, asm_stack[asm_i].file_name_i, asm_stack[asm_i].file_line_num, CODE};
 
 				blocks[0] = (struct InstructionBlock){c + 1, FIRST};
 				count_blocks = 1;
@@ -839,7 +875,7 @@ int main(int argc, char **argv) {
 															BIN;
 
 						uint32_t val = 0;
-						for (c++; (*c >= '0' && *c <= '9') || (*c >= 'a' && *c <= 'f'); c++) {
+						for (c++; (*c >= '0' && *c <= '9') || (getLowerChar(*c) >= 'a' && getLowerChar(*c) <= 'f'); c++) {
 							if (verbose_mode) printf("%c", *c);
 							switch (num_type) {
 								case HEX:
@@ -847,7 +883,7 @@ int main(int argc, char **argv) {
 									if (*c >= '0' && *c <= '9') {
 										val += *c - '0';
 									} else {
-										val += 10 + (*c - 'a');
+										val += 10 + (getLowerChar(*c) - 'a');
 									}
 									break;
 								case DEC:
@@ -971,7 +1007,13 @@ int main(int argc, char **argv) {
 	}
 	free(labels);
 	free(lines);
-	free(asm_buffer);
+	if (asm_stack != NULL) {
+		for (int i = 0; i <= asm_i; i++) {
+			free(asm_stack[i].asm_buffer);
+		}
+	}
+	free(asm_stack);
+	free(file_names);
 
 	return end_r;
 }
