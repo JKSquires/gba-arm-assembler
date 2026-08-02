@@ -94,7 +94,7 @@ enum NumType {
 struct Line {
 	char *start;
 	Inst *data; // TODO: maybe instead of a pointer to an instruction, we can just store the instruction here so that we don't have to allocate space for an instruction and also have a pointer to it. If we do this, when we call the encoding functions, we should put in &data at first instead of data so that we don't have to pass an entire struct as a parameter.
-	unsigned long file_name_i;
+	char *file_name;
 	unsigned long line_num;
 	enum LineType type : 8;
 };
@@ -126,7 +126,7 @@ struct Instruction {
 };
 
 struct AsmFile {
-	unsigned long file_name_i;
+	char *file_name;
 	unsigned long file_line_num;
 	char *asm_buffer;
 	char *asm_buffer_continue;
@@ -134,7 +134,6 @@ struct AsmFile {
 };
 
 
-char **file_names;
 int end_r = 0;
 
 
@@ -176,7 +175,7 @@ unsigned long findLabel(char *inst_label, unsigned int inst_label_length, struct
 	unsigned long labels_i = 0;
 	for (; labels_i < label_tot; labels_i++) {
 		unsigned int label_length = 0;
-		for (; labels[labels_i].start[label_length] != ':' && labels[labels_i].start[label_length] != '\n'; label_length++);
+		for (; labels[labels_i].start[label_length] != ':' && labels[labels_i].start[label_length] != '\n'; label_length++); // FIXME: should count this and store it when it is added instead of having to count it every time
 
 		bool matches = true;
 		if (inst_label_length != label_length) {
@@ -196,7 +195,7 @@ unsigned long findLabel(char *inst_label, unsigned int inst_label_length, struct
 
 void lineIssue(struct Line *line) {
 	printf("Issue on line %lu in file \"", line->line_num);
-	for (char *c = file_names[line->file_name_i]; *c != '\0' && *c != '"' && *c != '\n'; c++) {
+	for (char *c = line->file_name; *c != '"' && *c != '\0' && *c != '\n'; c++) {
 		printf("%c", *c);
 	}
 	printf("\":\n");
@@ -208,6 +207,83 @@ void lineIssue(struct Line *line) {
 	end_r = 100;
 }
 
+int includeFile(char *file_name, struct AsmFile *files, unsigned long *files_size, unsigned long *file_count, struct AsmFile **asm_stack, unsigned int *asm_stack_size, unsigned int *asm_i) {
+	if (*file_count == *files_size) { // TODO: needs testing
+		*files_size *= 2;
+		struct AsmFile *realloc_files = realloc(files, *files_size * sizeof *files);
+		if (realloc_files == NULL) {
+			fprintf(stderr, "ERROR: Issue reallocating for more space for files array\n");
+
+			end_r = -210;
+			return -1;
+		}
+		files = realloc_files;
+	}
+	(*file_count)++;
+
+	unsigned int file_name_length = 0;
+	for (; file_name[file_name_length] != '"' && file_name[file_name_length] != '\0' && file_name[file_name_length] != '\n'; file_name_length++);
+	char file_name_terminated[file_name_length];
+	for (int i = 0; i < file_name_length; i++) {
+		file_name_terminated[i] = file_name[i];
+	}
+	file_name_terminated[file_name_length] = '\0';
+
+	FILE *asm_file = fopen(file_name_terminated, "r");
+	if (asm_file == NULL) {
+		fprintf(stderr, "ERROR: Error opening file \"");
+		for (char *c = file_name_terminated; *c != '\0'; c++) {
+			fprintf(stderr, "%c", *c);
+		}
+		fprintf(stderr, "\"\n");
+
+		end_r = -101;
+		return -1;
+	}
+
+	fseek(asm_file, 0, SEEK_END);
+	unsigned long asm_size = ftell(asm_file);
+	rewind(asm_file);
+
+	char *asm_buffer = malloc(asm_size + 1);
+	unsigned long read = fread(asm_buffer, 1, asm_size, asm_file);
+	if (read < asm_size) {
+		fprintf(stderr, "ERROR: Error reading file from buffer\n");
+
+		free(asm_buffer);
+
+		end_r = -104;
+		return -1;
+	}
+	asm_buffer[asm_size] = '\n';
+
+	fclose(asm_file);
+
+	unsigned long file_line_num = 1;
+	char *asm_buffer_end = asm_buffer + asm_size;
+	char *asm_buffer_start = skipEmptyLines(asm_buffer, asm_buffer_end, &file_line_num);
+	if ((*asm_buffer_start == '\n' || *asm_buffer_start == ';') && asm_buffer_start < asm_buffer_end) {
+		asm_buffer_start = skipWhitespace(asm_buffer_start + 1);
+	}
+
+	(*asm_i)++;
+	if (*asm_i == *asm_stack_size) { // TODO: needs testing
+		*asm_stack_size *= 2;
+		struct AsmFile **realloc_asm_stack = realloc(asm_stack, *asm_stack_size * sizeof *asm_stack);
+		if (realloc_asm_stack == NULL) {
+			fprintf(stderr, "ERROR: Issue reallocating for more space for ASM stack\n");
+
+			end_r = -211;
+			return -1;
+		}
+		asm_stack = realloc_asm_stack;
+	}
+	files[*asm_i] = (struct AsmFile){file_name, file_line_num, asm_buffer, asm_buffer_start, asm_buffer_end};
+	asm_stack[*asm_i] = &(files[*asm_i]);
+
+	return 0;
+}
+
 #include "encoding.c"
 
 
@@ -216,11 +292,8 @@ int main(int argc, char **argv) {
 	bool disp_rom_info = false;
 	bool verbose_mode = false;
 
-	FILE *asm_file; // TODO: maybe for when we implement including other asm files in a file we should have an array of those files.
-	FILE *gba_file;
-
-	char *asm_buffer = NULL;
-	struct AsmFile *asm_stack = NULL;
+	struct AsmFile *files = NULL;
+	struct AsmFile **asm_stack = NULL;
 	struct Line *lines = NULL;
 	struct Label *labels = NULL;
 	unsigned long label_tot = 0;
@@ -253,41 +326,27 @@ int main(int argc, char **argv) {
 		goto freeEnd;
 	}
 
-	asm_file = fopen(argv[input_file_arg_i], "r");
-	unsigned long file_names_size = 8;
-	unsigned long file_name_count = 1;
-	file_names = malloc(file_names_size * sizeof *file_names); // TODO: might want to use a hash table instead
-	if (file_names == NULL) {
-		fprintf(stderr, "ERROR: Issue allocating space for file names array\n");
+	unsigned long files_size = 8;
+	unsigned long file_count = 0;
+	files = malloc(files_size * sizeof *files);
+	if (files == NULL) {
+		fprintf(stderr, "ERROR: Issue allocating space for files array\n");
 
 		end_r = -208;
 		goto freeEnd;
 	}
-	file_names[0] = argv[input_file_arg_i];
 
-	if (asm_file == NULL) {
-		fprintf(stderr, "ERROR: Error opening %s\n", argv[1]);
+	unsigned int asm_stack_size = 4;
+	unsigned int asm_i = -1;
+	asm_stack = malloc(asm_stack_size * sizeof *asm_stack);
+	if (asm_stack == NULL) {
+		fprintf(stderr, "ERROR: Issue allocating space for ASM file stack\n");
 
-		end_r = -101;
+		end_r = -209;
 		goto freeEnd;
 	}
 
-
-	fseek(asm_file, 0, SEEK_END);
-	unsigned long asm_size = ftell(asm_file);
-	rewind(asm_file);
-
-	asm_buffer = malloc(asm_size + 1);
-	unsigned long read = fread(asm_buffer, 1, asm_size, asm_file);
-	if (read < asm_size) {
-		fprintf(stderr, "ERROR: Error reading file from buffer\n");
-
-		end_r = -104;
-		goto freeEnd;
-	}
-	asm_buffer[asm_size] = '\n';
-
-	fclose(asm_file);
+	if (includeFile(argv[input_file_arg_i], files, &files_size, &file_count, asm_stack, &asm_stack_size, &asm_i) != 0) goto freeEnd;
 
 	unsigned long lines_arr_size = 256;
 	lines = malloc(lines_arr_size * sizeof *lines);
@@ -299,7 +358,6 @@ int main(int argc, char **argv) {
 	}
 
 	unsigned long line_num = 0;
-	unsigned long file_line_num = 1;
 
 	uint32_t track_rom_size = 0;
 	unsigned long labels_arr_size = 64;
@@ -316,27 +374,10 @@ int main(int argc, char **argv) {
 	int count_blocks = 1;
 	struct InstructionBlock blocks[MAX_INSTRUCTION_BLOCKS];
 
-	char *asm_buffer_end = asm_buffer + asm_size;
-	char *asm_buffer_start = skipEmptyLines(asm_buffer, asm_buffer_end, &file_line_num);
-	if ((*asm_buffer_start == '\n' || *asm_buffer_start == ';') && asm_buffer_start < asm_buffer_end) {
-		asm_buffer_start = skipWhitespace(asm_buffer_start + 1);
-	}
+	lines[line_num] = (struct Line){asm_stack[asm_i]->asm_buffer_continue, NULL, asm_stack[asm_i]->file_name, asm_stack[asm_i]->file_line_num, CODE};
+	blocks[count_blocks - 1] = (struct InstructionBlock){asm_stack[asm_i]->asm_buffer_continue, FIRST};
 
-	unsigned int asm_stack_size = 4;
-	unsigned int asm_i = 0;
-	asm_stack = malloc(asm_stack_size * sizeof *asm_stack);
-	if (asm_stack == NULL) {
-		fprintf(stderr, "ERROR: Issue allocating space for ASM file stack\n");
-
-		end_r = -209;
-		goto freeEnd;
-	}
-	asm_stack[0] = (struct AsmFile){0, file_line_num, asm_buffer, asm_buffer_start, asm_buffer_end};
-
-	lines[0] = (struct Line){asm_buffer_start, NULL, asm_stack[asm_i].file_name_i, asm_stack[asm_i].file_line_num, CODE};
-	blocks[0] = (struct InstructionBlock){asm_buffer_start, FIRST};
-
-	for (char *c = asm_stack[asm_i].asm_buffer_continue; c <= asm_stack[asm_i].asm_buffer_end; c++) {
+	for (char *c = asm_stack[asm_i]->asm_buffer_continue; c <= asm_stack[asm_i]->asm_buffer_end; c++) {
 		if (*c == '\n') {
 			comment = false;
 			if (track_operand_state != REGULAR) {
@@ -344,7 +385,7 @@ int main(int argc, char **argv) {
 				lineIssue(&lines[line_num]);
 				track_operand_state = REGULAR;
 			}
-			asm_stack[asm_i].file_line_num++;
+			asm_stack[asm_i]->file_line_num++;
 
 			if (lines[line_num].type == CODE) {
 				Inst *inst = malloc(sizeof *inst);
@@ -373,9 +414,9 @@ int main(int argc, char **argv) {
 				//printf("\nROM size: %lu bytes\n", (unsigned long)track_rom_size);
 			}
 
-			c = skipEmptyLines(c, asm_stack[asm_i].asm_buffer_end, &(asm_stack[asm_i].file_line_num));
+			c = skipEmptyLines(c, asm_stack[asm_i]->asm_buffer_end, &(asm_stack[asm_i]->file_line_num));
 
-			if (c != asm_stack[asm_i].asm_buffer_end) {
+			if (c != asm_stack[asm_i]->asm_buffer_end) {
 				if (++line_num + 1 == lines_arr_size) {
 					lines_arr_size *= 2;
 					struct Line *realloc_lines = realloc(lines, lines_arr_size * sizeof *lines);
@@ -395,12 +436,12 @@ int main(int argc, char **argv) {
 				}
 
 				c = skipWhitespace(c + 1) - 1;
-				lines[line_num] = (struct Line){c + 1, NULL, asm_stack[asm_i].file_name_i, asm_stack[asm_i].file_line_num, CODE};
+				lines[line_num] = (struct Line){c + 1, NULL, asm_stack[asm_i]->file_name, asm_stack[asm_i]->file_line_num, CODE};
 
 				blocks[0] = (struct InstructionBlock){c + 1, FIRST};
 				count_blocks = 1;
 			} else {
-				break;
+				goto pass1LoopBlockEnd;
 			}
 		}
 
@@ -437,11 +478,21 @@ int main(int argc, char **argv) {
 							break;
 						case 'i':
 							if (*(c + 2) == ' ') {
-								printf("\nInclude directive is unsupported right now: "); // TODO: Implement; maybe something like `@i "<file name>"`
-								lineIssue(&lines[line_num]);
 								lines[line_num].type = DIR_I;
 
-								c += 4;
+								if (*(c + 3) == '"') {
+									c += 4;
+									char *file_name_start = c;
+
+									for (; *c != '"' && *c != '\n'; c++);
+									asm_stack[asm_i]->asm_buffer_continue = c--;
+
+									if (includeFile(file_name_start, files, &files_size, &file_count, asm_stack, &asm_stack_size, &asm_i) != 0) goto freeEnd; // FIXME: be more mindful about space: look up in the array to see if the file already exists, and if it does, call it from there. Also, this lets us do a rudamentary check if there is simple file recursion.
+
+									c = asm_stack[asm_i]->asm_buffer_continue;
+								} else {
+									c += 2;
+								}
 							}
 							break;
 						case 't':
@@ -458,7 +509,7 @@ int main(int argc, char **argv) {
 							break;
 					}
 
-					continue;
+					goto pass1LoopBlockEnd;
 				case ';':
 					comment = true;
 					break;
@@ -606,6 +657,12 @@ int main(int argc, char **argv) {
 
 					break;
 			}
+		}
+
+		pass1LoopBlockEnd:
+		while (c == asm_stack[asm_i]->asm_buffer_end && asm_i > 0) {
+			asm_i--;
+			c = asm_stack[asm_i]->asm_buffer_continue;
 		}
 	}
 
@@ -963,13 +1020,12 @@ int main(int argc, char **argv) {
 	}
 
 
+	FILE *gba_file;
 	if (argc > input_file_arg_i + 1) {
 		gba_file = fopen(argv[input_file_arg_i + 1], "wb");
 
 		if (gba_file == NULL) {
 			fprintf(stderr, "ERROR: Error creating or opening %s\n", argv[2]);
-
-			fclose(asm_file);
 
 			end_r = -102;
 			goto freeEnd;
@@ -979,8 +1035,6 @@ int main(int argc, char **argv) {
 
 		if (gba_file == NULL) {
 			fprintf(stderr, "ERROR: Error creating or opening output GBA file\n");
-
-			fclose(asm_file);
 
 			end_r = -103;
 			goto freeEnd;
@@ -1007,13 +1061,13 @@ int main(int argc, char **argv) {
 	}
 	free(labels);
 	free(lines);
-	if (asm_stack != NULL) {
-		for (int i = 0; i <= asm_i; i++) {
-			free(asm_stack[i].asm_buffer);
+	free(asm_stack);
+	if (files != NULL) {
+		for (int i = 0; i < file_count; i++) {
+			free(files[i].asm_buffer);
 		}
 	}
-	free(asm_stack);
-	free(file_names);
+	free(files);
 
 	return end_r;
 }

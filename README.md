@@ -46,6 +46,7 @@ Name | Directive | Example Usage
 ---- | --------- | -------------
 Define bytes | `@b <byte list>` | `@b $10, #255`
 Define halfwords | `@h <halfword list>` | `@h %10000000011`
+Include ASM File | `@i "<ASM file path>"` | `@i "header.asm"`
 Define words | `@w <word list>` | `@w $05000200,$4000130, %110000000000000000000000010`
 
 ## Supported Instructions
