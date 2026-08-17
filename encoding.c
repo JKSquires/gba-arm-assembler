@@ -139,7 +139,7 @@ uint32_t readConst(char *constant, Inst *i) {
 
 uint32_t getLabelOffset(char *label_start, struct Label *labels, unsigned long label_tot, Inst *i) {
 	unsigned int inst_label_length = 0;
-	for (; label_start[inst_label_length] >= 'a' && label_start[inst_label_length] <= 'z' || label_start[inst_label_length] >= '0' && label_start[inst_label_length] <= '9'; inst_label_length++);
+	for (; label_start[inst_label_length] >= 'a' && label_start[inst_label_length] <= 'z' || label_start[inst_label_length] >= '0' && label_start[inst_label_length] <= '9' || label_start[inst_label_length] == '_' || label_start[inst_label_length] == '-'; inst_label_length++);
 
 	unsigned long label_i = findLabel(label_start, inst_label_length, labels, label_tot);
 	if (label_i == label_tot) {

@@ -32,7 +32,7 @@ gcc main.c
 
 ## Misc. Assembler Syntax
 
-- *Labels* are delineated by a colon (`:`) at the end of the label's name. Label names are case insensitive alphanumeric text.
+- *Labels* are delineated by a colon (`:`) at the end of the label's name. Label names are case insensitive alphanumeric text and may include underscores and hyphens.
 - *Comments* are any text after a semi-colon (`;`). They can be placed anywhere at the end of a line.
 - *Instruction constants* must be prefixed with one of the following characters that determines the constant's base: `$` (hexadecimal; base-16), `#` (decimal; base-10), or `%` (binary; base-2).
 - *Instruction operands* must be seperated by single commas (`,`) and can have any number of spaces or tabs between them.
