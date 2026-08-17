@@ -174,11 +174,8 @@ char *skipEmptyLines(char *c, char *buffer_end, unsigned long *file_line_num) {
 unsigned long findLabel(char *inst_label, unsigned int inst_label_length, struct Label *labels, unsigned long label_tot) {
 	unsigned long labels_i = 0;
 	for (; labels_i < label_tot; labels_i++) {
-		unsigned int label_length = 0;
-		for (; labels[labels_i].start[label_length] != ':' && labels[labels_i].start[label_length] != '\n'; label_length++); // FIXME: should count this and store it when it is added instead of having to count it every time
-
 		bool matches = true;
-		if (inst_label_length != label_length) {
+		if (inst_label_length != labels[labels_i].length) {
 			matches = false;
 		} else {
 			for (int i = 0; i < inst_label_length; i++) {
