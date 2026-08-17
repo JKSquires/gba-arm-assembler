@@ -489,7 +489,9 @@ int main(int argc, char **argv) {
 
 									if (includeFile(file_name_start, files, &files_size, &file_count, asm_stack, &asm_stack_size, &asm_i) != 0) goto freeEnd; // FIXME: be more mindful about space: look up in the array to see if the file already exists, and if it does, call it from there. Also, this lets us do a rudamentary check if there is simple file recursion.
 
-									c = asm_stack[asm_i]->asm_buffer_continue;
+									c = asm_stack[asm_i]->asm_buffer_continue - 1;
+									lines[++line_num] = (struct Line){c + 1, NULL, asm_stack[asm_i]->file_name, asm_stack[asm_i]->file_line_num, CODE};
+									blocks[count_blocks - 1] = (struct InstructionBlock){asm_stack[asm_i]->asm_buffer_continue, FIRST};
 								} else {
 									c += 2;
 								}
