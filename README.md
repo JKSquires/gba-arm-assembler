@@ -10,6 +10,12 @@ A simple purpose-built ARM assembler targeting the Game Boy Advance.
 gbaaa [-i] [-v] <input ASM file> [output GBA file]
 ```
 
+Example: assemble car demo program:
+
+```sh
+gbaaa ./demos/car/car.asm car.gba
+```
+
 ---
 
 ## Build Instructions
