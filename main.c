@@ -408,7 +408,6 @@ int main(int argc, char **argv) {
 				lines[line_num].data = inst;
 
 				track_rom_size += 4;
-				//printf("\nROM size: %lu bytes\n", (unsigned long)track_rom_size);
 			}
 
 			c = skipEmptyLines(c, asm_stack[asm_i]->asm_buffer_end, &(asm_stack[asm_i]->file_line_num));
@@ -815,11 +814,13 @@ int main(int argc, char **argv) {
 										case 'd':
 											if (last_two[1] == 'b') {
 												encoding |= 1 << 24;
+											} else { // ldm/stm
+												encoding |= 1 << 23;
 											}
 											break;
 										case 'i':
 											switch (last_two[1]) {
-												case 'a': // TODO: ldmia = ldm and stmia = stm; might want to just remove this
+												case 'a':
 													encoding |= 1 << 23;
 													break;
 												case 'b':
@@ -828,7 +829,7 @@ int main(int argc, char **argv) {
 											}
 											break;
 										default:
-											if (last_encode_success == 14) { // ldm__
+											if (*mnemonic_start == 'l') { // ldm__
 												switch (last_two[0]) {
 													case 'e':
 														switch (last_two[1]) { // TODO: are we using too many switch-cases?
@@ -842,7 +843,7 @@ int main(int argc, char **argv) {
 														break;
 													case 'f':
 														if (last_two[1] == 'd') {
-															encoding |= 1 << 23; // TODO: ldmfd = ldm; might want to just remove this
+															encoding |= 1 << 23;
 														}
 														break;
 												}
@@ -850,7 +851,7 @@ int main(int argc, char **argv) {
 												switch (last_two[0]) {
 													case 'e':
 														if (last_two[1] == 'a') {
-															encoding |= 1 << 23; // TODO: stmea = stm; might want to just remove this
+															encoding |= 1 << 23;
 														}
 														break;
 													case 'f':
