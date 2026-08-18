@@ -449,7 +449,7 @@ int main(int argc, char **argv) {
 						case 'b': // fall through
 						case 'h': // fall through
 						case 'w':
-							if (*(c + 2) == ' ') {
+							if (*(c + 2) == ' ' || *(c + 2) == '\t') {
 								char k = getLowerChar(*(c + 1));
 								lines[line_num].type = k == 'b' ? DIR_B :
 														k == 'h' ? DIR_H :
@@ -484,7 +484,7 @@ int main(int argc, char **argv) {
 									for (; *c != '"' && *c != '\n'; c++);
 									asm_stack[asm_i]->asm_buffer_continue = c--;
 
-									if (includeFile(file_name_start, files, &files_size, &file_count, asm_stack, &asm_stack_size, &asm_i) != 0) goto freeEnd; // FIXME: be more mindful about space: look up in the array to see if the file already exists, and if it does, call it from there. Also, this lets us do a rudamentary check if there is simple file recursion.
+									if (includeFile(file_name_start, files, &files_size, &file_count, asm_stack, &asm_stack_size, &asm_i) != 0) goto freeEnd;
 
 									c = asm_stack[asm_i]->asm_buffer_continue - 1;
 									lines[++line_num] = (struct Line){c + 1, NULL, asm_stack[asm_i]->file_name, asm_stack[asm_i]->file_line_num, CODE};
@@ -748,9 +748,7 @@ int main(int argc, char **argv) {
 						if (!starts_with_last_success) {
 							printf("Unrecognized instruction: ");
 							lineIssue(&lines[i]);
-						}// else {
-						//	printf("Last encoding success at #%d\n", last_encode_success);
-						//}
+						}
 					}
 
 					if (starts_with_last_success && encodings[last_encode_success].suffix != NOP) {
@@ -763,8 +761,6 @@ int main(int argc, char **argv) {
 						}
 
 						enum InstructionCondition cond = mi == success_encoding->mnemonic_length ? AL : getInstCond(mnemonic_start + success_encoding->mnemonic_length);
-						//printf("Probable instruction condition: 0x%x\n", cond);
-						//printf("Probable mnemonic #%d (%s)\n", last_encode_success, success_encoding->mnemonic);
 
 						for (; mnemonic_start[mi] != ' ' && mnemonic_start[mi] != '\t' && mnemonic_start[mi] != '\n'; mi++);
 
@@ -777,63 +773,42 @@ int main(int argc, char **argv) {
 
 						encoding |= cond << 28 | success_encoding->opcode | success_encoding->encode(rom_offset, oprnd1_start, encoding_variant, labels, label_tot, inst);
 
-						//printf("MI=%d->'%c'", mi, mnemonic_start[mi]);
 						if (mi > 2) {
 							char last_two[] = {mnemonic_start[mi - 2], mnemonic_start[mi - 1]};
 
 							switch (success_encoding->suffix) {
 								case SET_FLAGS:
-									//printf("Instruction detected with possible set flags\n");
-
 									encoding |= (last_two[1] == 's') << 20;
 
 									break;
 								case DATA_SIZE:
-									//printf("Instruction detected with possible data size ");
-
 									switch (last_two[1]) {
 										case 'b':
 											if (last_two[0] == 's') { // ___sb
-												//printf("sb");
-
 												encoding = (encoding & 0xF1FFFF9F) | (0xD << 4);
 											} else { // ___b
-												//printf("b");
-
 												encoding = (encoding & 0xF7FFFFFF) | (1 << 26) | (1 << 22);
 											}
 											break;
 										case 't':
 											if (last_two[0] == 'b') { // ___bt
-												//printf("bt");
-
 												encoding = (encoding & 0xF6FFFFFF) | (1 << 26) | (0x3 << 21);
 											} else { // ___t
-												//printf("t");
-
 												encoding = (encoding & 0xF6BFFFFF) | (1 << 26) | (1 << 21);
 											}
 											break;
 										case 'h':
 											encoding &= encoding & 0xF1FFFF9F;
 											if (last_two[0] == 's') { // ___sh
-												//printf("sh");
-
 												encoding |= 0xF << 4;
 											} else { // ___h
-												//printf("h");
-
 												encoding |= 0xB << 4;
 											}
 											break;
 									}
 
-									//printf("\n");
-
 									break;
 								case ADDRESSING_MODE:
-									//printf("Instruction detected with possible addressing mode\n");
-
 									encoding = (encoding & 0xF03FFFFF) | (1 << 27);
 
 									switch (last_two[0]) {
@@ -894,18 +869,12 @@ int main(int argc, char **argv) {
 									}
 									break;
 								case BYTE_SIZE:
-									//printf("Instruction detected with possible byte data size\n");
-
 									encoding |= (last_two[1] == 'b') << 22;
 
 									break;
 							}
 						}
 					} else {
-						//if (starts_with_last_success) {
-						//	printf("Probable nop\n");
-						//}
-
 						encoding = encodings[NOP_ENCODING_INDEX].encode(rom_offset, mnemonic_start, false, labels, label_tot, inst);
 					}
 				}
@@ -992,7 +961,6 @@ int main(int argc, char **argv) {
 	}
 
 
-	// FIXME: make a properly aligned table for this information (maybe make it a flag for the program to show?)
 	unsigned int longest_label_length = 5;
 	for (int i = 0; i < label_tot; i++) {
 		if (labels[i].length > longest_label_length)
