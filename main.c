@@ -13,6 +13,7 @@
 
 typedef struct Instruction Inst;
 typedef struct InstructionEncoding InstEncoding;
+struct Line;
 
 enum LineType {
 	DIR_B = 1,
@@ -91,14 +92,6 @@ enum NumType {
 };
 
 
-struct Line {
-	char *start;
-	Inst *data; // TODO: maybe instead of a pointer to an instruction, we can just store the instruction here so that we don't have to allocate space for an instruction and also have a pointer to it. If we do this, when we call the encoding functions, we should put in &data at first instead of data so that we don't have to pass an entire struct as a parameter.
-	char *file_name;
-	unsigned long line_num;
-	enum LineType type : 8;
-};
-
 struct Label {
 	char *start;
 	uint32_t offset;
@@ -123,6 +116,14 @@ struct Instruction {
 	struct Line *line;
 	struct InstructionBlock *blocks;
 	uint8_t block_count;
+};
+
+struct Line {
+	char *start;
+	Inst data;
+	char *file_name;
+	unsigned long line_num;
+	enum LineType type : 8;
 };
 
 struct AsmFile {
@@ -371,7 +372,7 @@ int main(int argc, char **argv) {
 	int count_blocks = 1;
 	struct InstructionBlock blocks[MAX_INSTRUCTION_BLOCKS];
 
-	lines[line_num] = (struct Line){asm_stack[asm_i]->asm_buffer_continue, NULL, asm_stack[asm_i]->file_name, asm_stack[asm_i]->file_line_num, CODE};
+	lines[line_num] = (struct Line){asm_stack[asm_i]->asm_buffer_continue, {0}, asm_stack[asm_i]->file_name, asm_stack[asm_i]->file_line_num, CODE};
 	blocks[count_blocks - 1] = (struct InstructionBlock){asm_stack[asm_i]->asm_buffer_continue, FIRST};
 
 	for (char *c = asm_stack[asm_i]->asm_buffer_continue; c <= asm_stack[asm_i]->asm_buffer_end; c++) {
@@ -385,13 +386,8 @@ int main(int argc, char **argv) {
 			asm_stack[asm_i]->file_line_num++;
 
 			if (lines[line_num].type == CODE) {
-				Inst *inst = malloc(sizeof *inst);
-				if (inst == NULL) {
-					fprintf(stderr, "ERROR: Issue allocating space for instruction\n");
+				Inst *inst = &(lines[line_num].data);
 
-					end_r = -202;
-					goto freeEnd;
-				}
 				inst->line = &(lines[line_num]);
 				inst->blocks = malloc(count_blocks * sizeof (struct InstructionBlock));
 				if (inst->blocks == NULL) {
@@ -404,8 +400,6 @@ int main(int argc, char **argv) {
 					inst->blocks[i] = blocks[i];
 				}
 				inst->block_count = count_blocks;
-
-				lines[line_num].data = inst;
 
 				track_rom_size += 4;
 			}
@@ -425,14 +419,12 @@ int main(int argc, char **argv) {
 					lines = realloc_lines;
 
 					for (unsigned long i = 0; i < line_num; i++) {
-						if (lines[i].data != NULL) {
-							((Inst *)(lines[i].data))->line = &(lines[i]);
-						}
+						lines[i].data.line = &(lines[i]);
 					}
 				}
 
 				c = skipWhitespace(c + 1) - 1;
-				lines[line_num] = (struct Line){c + 1, NULL, asm_stack[asm_i]->file_name, asm_stack[asm_i]->file_line_num, CODE};
+				lines[line_num] = (struct Line){c + 1, {0}, asm_stack[asm_i]->file_name, asm_stack[asm_i]->file_line_num, CODE};
 
 				blocks[0] = (struct InstructionBlock){c + 1, FIRST};
 				count_blocks = 1;
@@ -486,7 +478,7 @@ int main(int argc, char **argv) {
 									if (includeFile(file_name_start, files, &files_size, &file_count, asm_stack, &asm_stack_size, &asm_i) != 0) goto freeEnd;
 
 									c = asm_stack[asm_i]->asm_buffer_continue - 1;
-									lines[++line_num] = (struct Line){c + 1, NULL, asm_stack[asm_i]->file_name, asm_stack[asm_i]->file_line_num, CODE};
+									lines[++line_num] = (struct Line){c + 1, {0}, asm_stack[asm_i]->file_name, asm_stack[asm_i]->file_line_num, CODE};
 									blocks[count_blocks - 1] = (struct InstructionBlock){asm_stack[asm_i]->asm_buffer_continue, FIRST};
 								} else {
 									c += 2;
@@ -688,7 +680,7 @@ int main(int argc, char **argv) {
 
 		switch (lines[i].type) {
 			case CODE:
-				Inst *inst = (Inst *)(lines[i].data);
+				Inst *inst = &(lines[i].data);
 
 				if (verbose_mode) {
 					printf("\t\t");
@@ -1018,12 +1010,8 @@ int main(int argc, char **argv) {
 	free(encodings);
 	if (labels != NULL) {
 		for (int i = 0; i <= line_num; i++) {
-			Inst *line_data = lines[i].data;
-			if (line_data != NULL) {
-				if (lines[i].type == CODE) {
-					free(line_data->blocks);
-				}
-				free(line_data);
+			if (lines[i].type == CODE) {
+				free(lines[i].data.blocks);
 			}
 		}
 	}
