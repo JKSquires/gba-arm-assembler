@@ -240,7 +240,7 @@ int includeFile(char *file_name, struct AsmFile *files, unsigned long *files_siz
 	}
 
 	fseek(asm_file, 0, SEEK_END);
-	unsigned long asm_size = ftell(asm_file);
+	unsigned long asm_size = ftell(asm_file); // TODO: right now, windows is not completely supported because windows writes text files with \r\n instead of just \n, but when we open a file with "r", it sets \r\n to \n but ftell will give the size for with \r. This is not an issue with files written and saved in linux then used in windows...
 	rewind(asm_file);
 
 	char *asm_buffer = malloc(asm_size + 1);
