@@ -969,7 +969,7 @@ int main(int argc, char **argv) {
 				}
 
 				if (verbose_mode) printf("\t");
-				if (disp_rom_info) printf("Old ROM offset: %lX; ", rom_offset);
+				if (disp_rom_info) printf("Old ROM offset: %lX; ", (unsigned long)rom_offset);
 
 				if (count_byte_alignment != 0) {
 					uint32_t alignment_blocks = rom_offset / count_byte_alignment;
@@ -978,7 +978,7 @@ int main(int argc, char **argv) {
 					}
 				}
 
-				if (disp_rom_info) printf("Aligned ROM offset: %lX\n", rom_offset);
+				if (disp_rom_info) printf("Aligned ROM offset: %lX\n", (unsigned long)rom_offset);
 
 				if (verbose_mode) printf("\n");
 
