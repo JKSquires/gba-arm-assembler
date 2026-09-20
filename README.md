@@ -50,6 +50,7 @@ gcc main.c
 
 Name | Directive | Example Usage
 ---- | --------- | -------------
+Align Bytes | `@a <number of bytes to align to>` | `@a 4`
 Define bytes | `@b <byte list>` | `@b $10, #255`
 Define halfwords | `@h <halfword list>` | `@h %10000000011`
 Include ASM File | `@i "<ASM file path>"` | `@i "header.asm"`

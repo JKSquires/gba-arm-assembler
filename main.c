@@ -456,12 +456,20 @@ int main(int argc, char **argv) {
 							break;
 						case 'a':
 							if (*(c + 2) == ' ') {
-								printf("\nAlign bytes directive is unsupported right now: "); // TODO: Implement; maybe something like `@a <num; e.g. 4 or 2>`
-								lineIssue(&lines[line_num]);
 								lines[line_num].type = DIR_A;
 
-								c += 0; // TODO: count
-								// TODO: calculate what is needed to align.
+								uint32_t count_byte_alignment = 0;
+								for (c += 3; *c >= '0' && *c <= '9'; c++) {
+									count_byte_alignment = count_byte_alignment * 10 + (*c - '0');
+								}
+								c--;
+
+								if (count_byte_alignment != 0) {
+									uint32_t alignment_blocks = track_rom_size / count_byte_alignment;
+									if (track_rom_size != alignment_blocks * count_byte_alignment) {
+										track_rom_size = (alignment_blocks + 1) * count_byte_alignment;
+									}
+								}
 							}
 							break;
 						case 'i':
@@ -944,6 +952,34 @@ int main(int argc, char **argv) {
 						}
 					}
 				}
+				if (verbose_mode) printf("\n");
+
+				break;
+			case DIR_A:
+				if (verbose_mode) printf("\t\t");
+
+				uint32_t count_byte_alignment = 0;
+
+				for (char *c = lines[i].start; *c != '\n' && *c != ';'; c++) {
+					if (verbose_mode) printf("%c", *c);
+
+					if (*c >= '0' && *c <= '9') {
+						count_byte_alignment = count_byte_alignment * 10 + (*c - '0');
+					}
+				}
+
+				if (verbose_mode) printf("\t");
+				if (disp_rom_info) printf("Old ROM offset: %lX; ", rom_offset);
+
+				if (count_byte_alignment != 0) {
+					uint32_t alignment_blocks = rom_offset / count_byte_alignment;
+					if (rom_offset != alignment_blocks * count_byte_alignment) {
+						rom_offset = (alignment_blocks + 1) * count_byte_alignment;
+					}
+				}
+
+				if (disp_rom_info) printf("Aligned ROM offset: %lX\n", rom_offset);
+
 				if (verbose_mode) printf("\n");
 
 				break;
