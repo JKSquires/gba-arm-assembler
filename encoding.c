@@ -526,7 +526,7 @@ uint32_t ldrStr(uint32_t inst_offset, char *oprnd1_start, bool h_sh_sb, struct L
 				if (!h_sh_sb) {
 					encoding |= constant & 0xFFF;
 				} else {
-					encoding |= (1 << 22) | ((constant & 0xF0) << 8) | (constant & 0x0F);
+					encoding |= (1 << 22) | ((constant & 0xF0) << 4) | (constant & 0x0F);
 				}
 
 				if (i->blocks[2].type & MEM) {
